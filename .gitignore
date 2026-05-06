@@ -1,0 +1,33 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build outputs
+dist/
+build/
+.next/
+coverage/
+
+# env/secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# local runtime data
+.data/
+runs/
+workspaces/
+logs/
+artifacts/
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+
+# agent auth/session material - never commit
+.pi/
+.codex/
+.claude/
