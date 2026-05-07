@@ -42,8 +42,9 @@ When starting work in this repository, read these files first:
 3. [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — proposed system architecture.
 4. [`docs/PI-FIRST-RUNTIME.md`](./docs/PI-FIRST-RUNTIME.md) — Pi runtime design.
 5. [`docs/JIRA-WORKFLOW.md`](./docs/JIRA-WORKFLOW.md) — Jira pickup and state sync.
-6. [`docs/ROADMAP.md`](./docs/ROADMAP.md) — suggested MVP milestones.
-7. ADRs in [`docs/adr`](./docs/adr).
+6. [`docs/TRACKER.md`](./docs/TRACKER.md) — detailed milestone tracker and next actions.
+7. [`docs/ROADMAP.md`](./docs/ROADMAP.md) — short roadmap view.
+8. ADRs in [`docs/adr`](./docs/adr).
 
 ## Documentation map
 
@@ -54,7 +55,8 @@ When starting work in this repository, read these files first:
 - [`docs/JIRA-WORKFLOW.md`](./docs/JIRA-WORKFLOW.md) — issue claiming and Jira updates.
 - [`docs/EVENTS-AND-UI.md`](./docs/EVENTS-AND-UI.md) — live event stream, chat, and control model.
 - [`docs/SECURITY.md`](./docs/SECURITY.md) — sandboxing, secrets, threat model.
-- [`docs/ROADMAP.md`](./docs/ROADMAP.md) — implementation slices.
+- [`docs/ROADMAP.md`](./docs/ROADMAP.md) — short roadmap view.
+- [`docs/TRACKER.md`](./docs/TRACKER.md) — detailed milestone tracker, exit gates, backlog, and current status.
 - [`docs/REFERENCES.md`](./docs/REFERENCES.md) — external repositories, source links, commands.
 - [`docs/adr`](./docs/adr) — durable architecture decisions.
 - [`docs/briefs`](./docs/briefs) — future implementation handoff briefs.

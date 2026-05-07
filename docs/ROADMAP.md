@@ -1,108 +1,63 @@
 # Roadmap
 
-## Strategy
+TaskSmith's detailed work tracker lives in [`TRACKER.md`](./TRACKER.md). This file is the shorter roadmap view.
 
-Build TaskSmith as thin vertical slices. Each slice should be end-to-end and demonstrable.
+## North star
 
-Do not start with a complex workflow builder. Start with one Jira watch, one repo, one Pi run, one verifier, one PR.
+```txt
+Jira issue marked ai-ready
+  -> claim issue
+  -> create Run
+  -> start native Pi session in isolated workspace
+  -> stream live UI
+  -> allow steer/follow-up/abort
+  -> verify deterministically, including e2e where configured
+  -> fresh-context review
+  -> draft PR
+  -> Jira update
+  -> CI fixup loop
+```
 
-## Phase 0 — Project spike
+## Roadmap phases
 
-Goal: prove Pi can run on Hetzner with persisted auth/session state.
+| Phase | Status | Outcome |
+|---|---:|---|
+| 0. Foundation docs | Done | Product context, research, ADRs, and briefs exist |
+| 1. Pi runtime spike | Next | Prove Pi SDK/RPC control, auth, sessions, and streaming |
+| 2. Manual Run MVP | Not started | Manual prompt -> Pi run -> live UI -> controls -> event replay |
+| 3. Deterministic verifier | Not started | Configured checks/e2e run outside the agent and drive fix attempts |
+| 4. Jira pickup | Not started | `ai-ready` Jira issue creates exactly one Run and receives updates |
+| 5. PR creation | Not started | Verified changes become draft PR linked to Jira and Run |
+| 6. Fresh-context review | Not started | Independent diff review blocks or fixes risky changes |
+| 7. CI fixup | Not started | Failed PR CI logs create bounded fix attempts |
+| 8. Hardening | Not started | Hetzner deployment, auth, redaction, isolation, observability |
 
-Acceptance criteria:
+## Implementation principle
 
-- [ ] Pi installed on Hetzner.
-- [ ] Pi authenticated via subscription auth.
-- [ ] Pi can run in intended worker/sandbox environment.
-- [ ] Pi session persists under a custom session dir.
-- [ ] A test prompt can be steered/followed-up/aborted via SDK or RPC.
+Build thin vertical slices. Do not begin with a generic workflow builder. The first useful product is:
 
-## Phase 1 — Manual run MVP
+```txt
+manual Run -> native Pi session -> live UI -> deterministic verifier
+```
 
-Goal: start a Run manually from UI/API and stream Pi events.
+Then add Jira and PR automation around that core.
 
-Acceptance criteria:
+## Current immediate next actions
 
-- [ ] Create Run with repo and prompt.
-- [ ] Worker creates isolated workspace.
-- [ ] Worker starts Pi via SDK/RPC.
-- [ ] Events are stored in DB.
-- [ ] UI streams events live.
-- [ ] UI can send prompt/steer/follow-up/abort.
-- [ ] UI can reconnect and replay history.
+1. Choose Pi integration mode for the spike:
+   - TypeScript SDK if the worker is Node/TypeScript.
+   - Pi RPC if subprocess isolation and language independence matter more.
+2. Prove prompt + stream + steer + follow-up + abort with a per-run session directory.
+3. Document Pi auth/session requirements on the target host.
+4. Scaffold the application only after the Pi runtime spike is successful.
 
-## Phase 2 — Deterministic verifier
+## Detailed tracker
 
-Goal: run configured checks after Pi completes.
+Use [`docs/TRACKER.md`](./TRACKER.md) for:
 
-Acceptance criteria:
-
-- [ ] Repo config supports verification commands.
-- [ ] Verifier runs commands outside Pi.
-- [ ] Logs are stored and displayed.
-- [ ] Failed verification creates a fix attempt with logs.
-- [ ] Verification pass/fail appears in UI.
-
-## Phase 3 — Jira pickup
-
-Goal: create Runs from Jira issues.
-
-Acceptance criteria:
-
-- [ ] Configure Jira credentials and JQL watch.
-- [ ] Poller finds `ai-ready` issue.
-- [ ] Poller claims issue idempotently.
-- [ ] Run is created and linked to Jira key.
-- [ ] Jira receives comment with run link.
-- [ ] Missing repo route moves Run to `waiting_for_user`.
-
-## Phase 4 — PR creation
-
-Goal: convert verified changes into draft PR.
-
-Acceptance criteria:
-
-- [ ] Worker creates branch.
-- [ ] Worker commits changes.
-- [ ] Worker pushes branch.
-- [ ] PR Creator opens draft PR.
-- [ ] PR body contains Jira link, run link, verification summary.
-- [ ] Jira receives PR link.
-
-## Phase 5 — Independent review
-
-Goal: fresh-context review before PR creation or before PR marked ready.
-
-Acceptance criteria:
-
-- [ ] Review uses separate session/context from implementation.
-- [ ] Review reads diff and verification result.
-- [ ] Review findings are structured by severity.
-- [ ] Severe findings block PR or trigger fix attempt.
-- [ ] Findings appear in UI and PR body.
-
-## Phase 6 — CI fixup
-
-Goal: poll CI and let Pi fix failures.
-
-Acceptance criteria:
-
-- [ ] PR CI status is polled.
-- [ ] Failed logs are fetched.
-- [ ] Fix attempt is created with CI logs.
-- [ ] New commit is pushed.
-- [ ] Loop stops at max attempts.
-
-## Phase 7 — Hardening
-
-Goal: make platform safe enough for broader internal use.
-
-Acceptance criteria:
-
-- [ ] Secret redaction tested.
-- [ ] Sandbox isolation reviewed.
-- [ ] Resource limits enforced.
-- [ ] Audit logs retained.
-- [ ] Auth/RBAC added for internal users.
-- [ ] Backup/recovery plan documented.
+- milestone checklists,
+- dependencies,
+- exit gates,
+- cross-cutting backlog,
+- definition of ready/done,
+- current status.

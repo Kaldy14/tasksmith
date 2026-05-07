@@ -8,9 +8,10 @@ Before planning or implementing, read:
 
 1. `README.md`
 2. `docs/CONTEXT.md`
-3. Relevant architecture docs in `docs/`
-4. Relevant ADRs in `docs/adr/`
-5. Existing code and tests once code exists
+3. `docs/TRACKER.md`
+4. Relevant architecture docs in `docs/`
+5. Relevant ADRs in `docs/adr/`
+6. Existing code and tests once code exists
 
 Do not rely on previous chat context unless it has been copied into repository docs.
 
