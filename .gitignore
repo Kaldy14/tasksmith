@@ -31,3 +31,5 @@ artifacts/
 .pi/
 .codex/
 .claude/
+
+.omc

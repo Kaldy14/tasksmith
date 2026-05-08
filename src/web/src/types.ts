@@ -1,0 +1,98 @@
+export type RunStatus =
+  | "queued"
+  | "preparing"
+  | "running"
+  | "waiting_for_control"
+  | "verifying"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type RuntimeAdapter = "pi" | "demo";
+export type ControlKind = "prompt" | "steer" | "follow_up";
+
+export interface RunRecord {
+  id: string;
+  sourceType: "manual";
+  title: string;
+  prompt: string;
+  repoKey: string;
+  adapter: RuntimeAdapter;
+  status: RunStatus;
+  currentAttemptId: string;
+  runDir: string;
+  workspaceDir: string;
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+  sessionId?: string;
+  sessionFile?: string;
+  error?: string;
+}
+
+export interface CreateRunInput {
+  title: string;
+  prompt: string;
+  repoKey: string;
+  adapter: RuntimeAdapter;
+}
+
+export type NormalizedRunEvent =
+  | { type: "run_status"; status: RunStatus; detail?: string }
+  | {
+      type: "user_message";
+      control: ControlKind;
+      text: string;
+      delivery: "received" | "forwarded" | "accepted" | "failed";
+      error?: string;
+    }
+  | { type: "assistant_delta"; text: string }
+  | { type: "assistant_message"; text: string; stopReason?: string }
+  | { type: "tool_call"; name: string; toolCallId?: string; input?: unknown }
+  | { type: "tool_result"; name: string; toolCallId?: string; output: string; isError?: boolean }
+  | { type: "command"; command: string; toolCallId?: string }
+  | {
+      type: "command_output";
+      command?: string;
+      output: string;
+      toolCallId?: string;
+      isError?: boolean;
+    }
+  | { type: "queue_update"; steering: readonly string[]; followUp: readonly string[] }
+  | {
+      type: "session_state";
+      sessionId: string;
+      sessionFile?: string;
+      isStreaming: boolean;
+      messageCount: number;
+      pendingMessageCount: number;
+    }
+  | {
+      type: "verification";
+      name: string;
+      command: string;
+      status: "running" | "passed" | "failed" | "skipped";
+      exitCode?: number;
+      durationMs?: number;
+      stdout?: string;
+      stderr?: string;
+      stdoutPath?: string;
+      stderrPath?: string;
+      error?: string;
+    }
+  | { type: "error"; message: string; detail?: string }
+  | { type: "attempt_done"; status: "completed" | "aborted" | "failed"; summary?: string };
+
+export interface StoredRunEvent {
+  version: 1;
+  id: string;
+  runId: string;
+  attemptId: string;
+  sequence: number;
+  type: NormalizedRunEvent["type"];
+  createdAt: string;
+  data: NormalizedRunEvent;
+}
+
+export type ConnectionStatus = "idle" | "connecting" | "online" | "offline";

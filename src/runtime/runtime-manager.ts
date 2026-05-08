@@ -1,0 +1,124 @@
+import type { ControlKind, NormalizedRunEvent, RunRecord, RuntimeHandle, StoredRunEvent } from "../domain/types.js";
+import type { FileStore } from "../storage/file-store.js";
+import type { EventHub } from "../server/event-hub.js";
+import type { DeterministicVerifier } from "../verifier/deterministic-verifier.js";
+import { DemoRuntime, type RuntimeSink } from "./demo-adapter.js";
+import { PiRuntime } from "./pi-adapter.js";
+
+export class RuntimeManager {
+  private readonly active = new Map<string, RuntimeHandle>();
+
+  constructor(
+    private readonly store: FileStore,
+    private readonly hub: EventHub,
+    private readonly verifier: DeterministicVerifier,
+  ) {}
+
+  async startRun(run: RunRecord): Promise<void> {
+    const sink = this.createSink(run);
+    const paths = this.store.pathsForRun(run.id);
+    const runtime = run.adapter === "demo" ? new DemoRuntime(run, sink) : new PiRuntime(run, paths, this.store, sink);
+    this.active.set(run.id, runtime);
+    await this.store.updateRun(run.id, { status: "preparing", startedAt: new Date().toISOString() });
+    await this.emit(run.id, { type: "run_status", status: "preparing", detail: `Starting ${run.adapter} runtime` });
+    void runtime.start().finally(() => {
+      this.active.delete(run.id);
+      void runtime.dispose();
+    });
+  }
+
+  async sendControl(runId: string, kind: ControlKind, message: string): Promise<void> {
+    const run = await this.requireRun(runId);
+    await this.store.appendControlEvent(runId, { kind, message });
+    await this.emit(runId, { type: "user_message", control: kind, text: message, delivery: "received" });
+    const runtime = this.active.get(runId);
+    if (!runtime) {
+      await this.emit(runId, { type: "user_message", control: kind, text: message, delivery: "failed", error: "Run is not active" });
+      throw new Error("Run is not active");
+    }
+    await this.emit(runId, { type: "user_message", control: kind, text: message, delivery: "forwarded" });
+    try {
+      await runtime.send(kind, message);
+      await this.emit(run.id, { type: "user_message", control: kind, text: message, delivery: "accepted" });
+    } catch (error: unknown) {
+      const messageText = error instanceof Error ? error.message : String(error);
+      await this.emit(run.id, { type: "user_message", control: kind, text: message, delivery: "failed", error: messageText });
+      throw error;
+    }
+  }
+
+  async abortRun(runId: string): Promise<void> {
+    const runtime = this.active.get(runId);
+    await this.store.appendControlEvent(runId, { type: "abort" });
+    if (!runtime) {
+      const run = await this.requireRun(runId);
+      await this.store.updateRun(run.id, { status: "cancelled", finishedAt: new Date().toISOString() });
+      await this.emit(runId, { type: "run_status", status: "cancelled", detail: "Cancelled before active runtime was available" });
+      return;
+    }
+    await runtime.abort();
+  }
+
+  async abortBash(runId: string): Promise<void> {
+    const runtime = this.active.get(runId);
+    if (!runtime) throw new Error("Run is not active");
+    await this.store.appendControlEvent(runId, { type: "abort_bash" });
+    await runtime.abortBash();
+  }
+
+  private createSink(run: RunRecord): RuntimeSink {
+    return {
+      emit: async (event) => {
+        await this.emit(run.id, event);
+      },
+      setCompleted: async (summary) => {
+        await this.completeRunAfterVerification(run.id, summary);
+      },
+      setFailed: async (error) => {
+        await this.store.updateRun(run.id, { status: "failed", error, finishedAt: new Date().toISOString() });
+        await this.emit(run.id, { type: "error", message: "Runtime failed", detail: error });
+        await this.emit(run.id, { type: "attempt_done", status: "failed", summary: error });
+        await this.emit(run.id, { type: "run_status", status: "failed" });
+      },
+      setAborted: async (summary) => {
+        await this.store.updateRun(run.id, { status: "cancelled", finishedAt: new Date().toISOString() });
+        await this.emit(run.id, { type: "attempt_done", status: "aborted", summary });
+        await this.emit(run.id, { type: "run_status", status: "cancelled", detail: summary });
+      },
+    };
+  }
+
+  private async completeRunAfterVerification(runId: string, implementationSummary: string): Promise<void> {
+    await this.store.updateRun(runId, { status: "verifying" });
+    await this.emit(runId, { type: "attempt_done", status: "completed", summary: implementationSummary });
+    await this.emit(runId, { type: "run_status", status: "verifying", detail: "Running deterministic verification" });
+
+    const run = await this.requireRun(runId);
+    const result = await this.verifier.verify(run, this.store.pathsForRun(runId), async (event) => {
+      await this.emit(runId, event);
+    });
+
+    if (result.status === "failed") {
+      await this.store.updateRun(runId, { status: "failed", error: `Verification failed: ${result.summary}`, finishedAt: new Date().toISOString() });
+      await this.emit(runId, { type: "error", message: "Verification failed", detail: result.summary });
+      await this.emit(runId, { type: "run_status", status: "failed", detail: result.summary });
+      return;
+    }
+
+    await this.store.updateRun(runId, { status: "completed", finishedAt: new Date().toISOString() });
+    await this.emit(runId, { type: "run_status", status: "completed", detail: result.summary });
+  }
+
+  private async emit(runId: string, event: NormalizedRunEvent): Promise<StoredRunEvent> {
+    const run = await this.requireRun(runId);
+    const stored = await this.store.appendEvent(run, event);
+    this.hub.broadcast(stored);
+    return stored;
+  }
+
+  private async requireRun(runId: string): Promise<RunRecord> {
+    const run = await this.store.getRun(runId);
+    if (!run) throw new Error(`Run not found: ${runId}`);
+    return run;
+  }
+}

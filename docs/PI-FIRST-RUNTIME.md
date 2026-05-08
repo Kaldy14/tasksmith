@@ -4,6 +4,12 @@
 
 TaskSmith should integrate with Pi directly via **Pi SDK** or **Pi RPC**, not primarily through ACP.
 
+## Current implementation slice
+
+Phase 1 starts with a local Pi SDK runtime spike in [`docs/PI-RUNTIME-SPIKE.md`](./PI-RUNTIME-SPIKE.md) and [`scripts/pi-runtime-spike.ts`](../scripts/pi-runtime-spike.ts).
+
+This spike treats Pi as an external runtime. It does not modify the user's Pi harness or global Pi package files. TaskSmith creates per-run directories, copies only narrow auth/config material when requested, stores raw and normalized events, and provides CLI controls that model the future web UI/API control path.
+
 ## Why not copy Kandev's Pi approach?
 
 Kandev integrates Pi as:

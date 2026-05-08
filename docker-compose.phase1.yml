@@ -1,0 +1,17 @@
+services:
+  tasksmith-runtime:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tasksmith/runtime:phase1
+    volumes:
+      - /opt/tasksmith/data:/data/tasksmith
+      - /opt/tasksmith/secrets/pi-auth:/run/tasksmith/pi-auth:ro
+    environment:
+      TASKSMITH_DATA_DIR: /data/tasksmith
+      TASKSMITH_PI_AUTH_SOURCE: /run/tasksmith/pi-auth
+      PI_SKIP_VERSION_CHECK: "1"
+      PI_TELEMETRY: "0"
+    ports:
+      - "127.0.0.1:3000:3000"
+    command: ["pnpm", "start"]

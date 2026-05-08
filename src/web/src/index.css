@@ -1,0 +1,154 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "SF Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, ui-monospace, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-heat: var(--heat);
+  --color-heat-foreground: var(--heat-foreground);
+  --color-heat-muted: var(--heat-muted);
+  --color-heat-glow: var(--heat-glow);
+  --color-steel: var(--steel);
+  --color-jade: var(--jade);
+  --color-copper: var(--copper);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+}
+
+:root,
+.dark {
+  color-scheme: dark;
+  --radius: 0.625rem;
+  --background: oklch(0.115 0.004 285);
+  --foreground: oklch(0.94 0.004 285);
+  --card: oklch(0.145 0.004 285);
+  --card-foreground: oklch(0.94 0.004 285);
+  --popover: oklch(0.16 0.004 285);
+  --popover-foreground: oklch(0.94 0.004 285);
+  --primary: oklch(0.59 0.2 264);
+  --primary-foreground: oklch(0.985 0.003 285);
+  --secondary: oklch(1 0 0 / 0.045);
+  --secondary-foreground: oklch(0.94 0.004 285);
+  --muted: oklch(1 0 0 / 0.045);
+  --muted-foreground: oklch(0.62 0.009 285);
+  --accent: oklch(1 0 0 / 0.06);
+  --accent-foreground: oklch(0.94 0.004 285);
+  --destructive: oklch(0.64 0.21 25);
+  --destructive-foreground: oklch(0.98 0.005 285);
+  --border: oklch(1 0 0 / 0.075);
+  --input: oklch(1 0 0 / 0.1);
+  --ring: oklch(0.62 0.19 264);
+
+  --heat: oklch(0.67 0.16 65);
+  --heat-foreground: oklch(0.16 0.02 65);
+  --heat-muted: oklch(0.67 0.16 65 / 0.16);
+  --heat-glow: oklch(0.67 0.16 65 / 0.32);
+  --steel: oklch(0.66 0.17 264);
+  --jade: oklch(0.75 0.13 160);
+  --copper: oklch(0.72 0.14 72);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  html,
+  body {
+    overscroll-behavior: none;
+  }
+
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.035;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 256px 256px;
+  }
+
+  #root {
+    position: relative;
+    z-index: 1;
+  }
+
+  pre,
+  code {
+    font-family: var(--font-mono);
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: oklch(1 0 0 / 0.1);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: oklch(1 0 0 / 0.18);
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::selection {
+    background: oklch(0.59 0.2 264 / 0.32);
+    color: var(--foreground);
+  }
+}
+
+@utility text-balance {
+  text-wrap: balance;
+}
+
+@utility ring-heat {
+  --tw-ring-color: var(--primary);
+}

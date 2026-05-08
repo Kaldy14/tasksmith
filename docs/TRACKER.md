@@ -2,9 +2,9 @@
 
 ## Current status
 
-**Stage:** Discovery / documentation seed  
-**Code status:** No application code yet  
-**Primary next milestone:** prove Pi-first runtime on the target host
+**Stage:** Phase 2 — Manual Run MVP  
+**Code status:** Manual Run API/UI vertical slice started  
+**Primary next milestone:** harden the Phase 3 verifier slice with repo-specific command profiles, then continue toward Jira pickup and PR creation.
 
 TaskSmith currently has durable product/architecture docs, ADRs, research references, and implementation briefs. The next work should be a technical spike, not a full app scaffold.
 
@@ -52,9 +52,9 @@ Jira issue marked ai-ready
 | Milestone | Status | Goal | Exit gate |
 |---|---:|---|---|
 | M0 — Foundation docs | `[x]` | Capture product intent, research, ADRs, and initial plan | Future agent can understand project without chat history |
-| M1 — Pi runtime spike | `[ ]` | Prove Pi SDK/RPC works on target host with persistent sessions and live controls | Can prompt, stream, steer, follow-up, abort, replay messages |
-| M2 — Manual Run MVP | `[ ]` | Create manual Run, run Pi in workspace, stream UI events | Browser shows live Pi work and accepts control messages |
-| M3 — Deterministic verifier | `[ ]` | Run configured checks/e2e after agent work | Verification pass/fail drives next Run state |
+| M1 — Pi runtime spike | `[~]` | Prove Pi SDK/RPC works on target host with persistent sessions and live controls | Can prompt, stream, steer, follow-up, abort, replay messages |
+| M2 — Manual Run MVP | `[~]` | Create manual Run, run Pi in workspace, stream UI events | Browser shows live Pi work and accepts control messages |
+| M3 — Deterministic verifier | `[~]` | Run configured checks/e2e after agent work | Verification pass/fail drives next Run state |
 | M4 — Jira pickup | `[ ]` | Poll Jira, claim issue, create Run, update Jira | Tagged Jira issue becomes exactly one TaskSmith Run |
 | M5 — PR creation | `[ ]` | Commit/push verified diff and create draft PR | PR links Jira, Run, verification, review summary |
 | M6 — Fresh-context review | `[ ]` | Independent review before PR readiness | Findings are structured and can block/fix |
@@ -80,9 +80,11 @@ Jira issue marked ai-ready
 
 ## M1 — Pi runtime spike
 
-**Status:** `[ ]` Not started  
+**Status:** `[~]` In progress  
 **Type:** technical spike  
 **Inspired by:** Pi SDK/RPC docs, Kandev Pi ACP limitations, Sandcastle runner experiments
+
+Phase 1 implementation note: the first slice is a standalone Pi SDK runtime harness, documented in [`PI-RUNTIME-SPIKE.md`](./PI-RUNTIME-SPIKE.md). It is not the full app scaffold. It establishes the runtime/event/control contract that the future Hetzner-hosted API and UI will use.
 
 ### Goal
 
@@ -90,25 +92,28 @@ Prove TaskSmith can use Pi as a native, steerable runtime on the intended host/s
 
 ### Tasks
 
-- [ ] Decide worker language for spike: TypeScript SDK vs subprocess RPC.
-- [ ] Install Pi on the intended development/Hetzner environment.
+- [x] Decide worker language for spike: TypeScript SDK first; keep RPC as fallback for process isolation.
+- [x] Prepare dedicated Hetzner host baseline (`tasksmith`, 178.105.101.73) with SSH hardening, firewall, Docker, and `/opt/tasksmith` directories.
+- [ ] Install/provision Pi auth on the intended Hetzner environment via narrow auth files.
 - [ ] Authenticate Pi using subscription auth.
 - [ ] Create throwaway workspace with a tiny test repo.
-- [ ] Start Pi with per-run home and session directory.
-- [ ] Capture event stream.
-- [ ] Send initial prompt.
-- [ ] Send `steer` while Pi is running.
-- [ ] Send `follow_up` after active work.
-- [ ] Send `abort` and verify process/session state.
-- [ ] Query messages/session stats after run.
-- [ ] Restart worker process and verify what can be replayed/resumed.
+- [x] Start Pi with per-run home and session directory in local spike harness.
+- [x] Capture raw and normalized event streams to JSONL.
+- [x] Send initial prompt through TaskSmith wrapper.
+- [x] Send `steer` while Pi is running and record e2e verification.
+- [x] Send `follow_up` after active work and record e2e verification.
+- [x] Send `abort` and verify process/session state with e2e.
+- [x] Query persisted messages after run via session inspection command.
+- [x] Restart worker process and verify event replay from normalized JSONL.
 
 ### Exit gate
 
-- [ ] A small script demonstrates prompt + stream + steer + follow-up + abort.
-- [ ] Session files are written under a per-run directory.
-- [ ] No full user home directory is mounted/copied.
-- [ ] Findings are documented in `docs/PI-FIRST-RUNTIME.md` or a new spike note.
+- [x] A small script demonstrates prompt + stream + steer + follow-up + abort locally.
+- [x] Session files are written under a per-run directory locally.
+- [x] No full user home directory is mounted/copied.
+- [x] Findings are documented in `docs/PI-FIRST-RUNTIME.md` and `docs/PI-RUNTIME-SPIKE.md`.
+- [x] Build and run Phase 1 Docker image on the target Hetzner host with deterministic no-auth e2e.
+- [ ] Repeat the authenticated runtime e2e on the target Hetzner host after Pi auth is provisioned.
 
 ### Open decisions
 
@@ -118,9 +123,11 @@ Prove TaskSmith can use Pi as a native, steerable runtime on the intended host/s
 
 ## M2 — Manual Run MVP
 
-**Status:** `[ ]` Not started  
+**Status:** `[~]` In progress  
 **Type:** first product slice  
 **Inspired by:** CodeForge task/worker/event model, OpenHands conversation UI
+
+Phase 2 implementation note: the first vertical slice is documented in [`MANUAL-RUN-MVP.md`](./MANUAL-RUN-MVP.md). It includes a Node/TypeScript API, browser UI, file-backed Run/Event store, WebSocket live stream, deterministic demo runtime, and Pi SDK runtime path.
 
 ### Goal
 
@@ -128,38 +135,38 @@ Before Jira automation, manually start a Run and watch/control the Pi session fr
 
 ### Backend tasks
 
-- [ ] Choose app stack and package layout.
-- [ ] Create database schema for `runs`, `attempts`, `events`.
-- [ ] Implement Run state machine.
-- [ ] Implement event append API with per-run sequence numbers.
-- [ ] Implement worker queue.
-- [ ] Implement `PiAdapter` with start/prompt/steer/follow-up/abort.
-- [ ] Normalize raw Pi events into TaskSmith events.
-- [ ] Store raw Pi events or safe debug references.
-- [ ] Implement run detail/read APIs.
-- [ ] Implement WebSocket endpoint for live event stream and controls.
+- [x] Choose app stack and package layout: Node/TypeScript monolith for Phase 2.
+- [~] Create persistence model for `runs`, `attempts`, `events`: file store for Phase 2, Postgres later.
+- [x] Implement initial Run state machine.
+- [x] Implement event append API with per-run sequence numbers.
+- [x] Implement in-process worker/runtime manager.
+- [x] Implement `PiAdapter` with start/prompt/steer/follow-up/abort.
+- [x] Normalize raw Pi events into TaskSmith events.
+- [x] Store raw Pi events and normalized JSONL event logs.
+- [x] Implement run detail/read APIs.
+- [x] Implement WebSocket endpoint for live event stream and controls.
 
 ### UI tasks
 
-- [ ] Run list page.
-- [ ] Run detail page.
-- [ ] Live conversation/event stream.
-- [ ] Chat/control box.
-- [ ] Controls for steer/follow-up/abort.
-- [ ] Reconnect and replay history.
+- [x] Run list page.
+- [x] Run detail page.
+- [x] Live conversation/event stream.
+- [x] Chat/control box.
+- [x] Controls for steer/follow-up/abort.
+- [x] Reconnect and replay history from normalized events.
 - [ ] Debug drawer for raw events.
 
 ### Exit gate
 
-- [ ] User can create a manual Run.
-- [ ] Pi runs in an isolated workspace.
-- [ ] UI displays live assistant/tool/command events.
-- [ ] UI can steer, queue follow-up, and abort.
-- [ ] Refreshing the page replays history.
+- [x] User can create a manual Run with deterministic demo runtime locally and on the `tasksmith` host.
+- [x] Pi runs in an isolated workspace through the browser UI after auth is provisioned on the host.
+- [x] UI displays live assistant/tool/command events.
+- [x] UI can steer, queue follow-up, and abort with deterministic demo runtime.
+- [x] Refreshing the page replays history from normalized events.
 
 ## M3 — Deterministic verifier
 
-**Status:** `[ ]` Not started  
+**Status:** `[~]` Initial vertical slice in progress  
 **Type:** quality gate  
 **Inspired by:** Kandev QA phase, CodeForge review/executor separation
 
@@ -169,23 +176,23 @@ TaskSmith, not the agent, runs configured checks after implementation.
 
 ### Tasks
 
-- [ ] Define repository config format.
+- [~] Define repository config format: initial slice uses global `TASKSMITH_VERIFICATION_COMMANDS`; repo registry still pending.
 - [ ] Add repo registry for `vosime-admin`, `core-hub`, future monorepo.
 - [ ] Add verifier command model: name, command, timeout, env policy, artifact policy.
-- [ ] Implement verifier runner outside Pi.
-- [ ] Capture stdout/stderr and exit codes.
-- [ ] Store verification results and artifacts.
-- [ ] Display verifier panel in UI.
+- [x] Implement verifier runner outside Pi.
+- [x] Capture stdout/stderr and exit codes.
+- [x] Store verification results and redacted logs.
+- [~] Display verifier results in the event stream; dedicated verifier panel still pending.
 - [ ] Feed failed verifier summary into a bounded fix attempt.
 - [ ] Add max fix attempt policy.
 - [ ] Support e2e artifacts: screenshots, traces, videos where available.
 
 ### Exit gate
 
-- [ ] Manual Run transitions to `verifying` after Pi finishes.
-- [ ] Passing checks move Run forward.
-- [ ] Failing checks create a clear UI failure and optional fix attempt.
-- [ ] The agent cannot mark verification passed by itself.
+- [x] Manual Run transitions to `verifying` after the implementation runtime finishes.
+- [x] Passing checks move Run to `completed`.
+- [~] Failing checks create a clear event-stream failure; fix attempts still pending.
+- [x] The agent cannot mark verification passed by itself.
 
 ## M4 — Jira pickup
 
