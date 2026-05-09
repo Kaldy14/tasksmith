@@ -33,6 +33,7 @@ pnpm e2e:verifier
 pnpm e2e:source-pickup
 pnpm e2e:delivery
 pnpm e2e:config-init
+pnpm e2e:review
 pnpm e2e:pi-spike
 ```
 
@@ -52,7 +53,9 @@ POST /api/runs
 POST /api/sources/poll
 GET  /api/source-claims
 GET  /api/pull-requests
+GET  /api/reviews
 GET  /api/runs/:id
+GET  /api/runs/:id/review
 GET  /api/runs/:id/events?after=<sequence>
 POST /api/runs/:id/messages
 POST /api/runs/:id/abort
@@ -170,6 +173,7 @@ pnpm e2e:verifier
 pnpm e2e:source-pickup
 pnpm e2e:delivery
 pnpm e2e:config-init
+pnpm e2e:review
 pnpm e2e:pi-spike
 ```
 

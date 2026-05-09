@@ -4,6 +4,7 @@ export type RunStatus =
   | "running"
   | "waiting_for_control"
   | "verifying"
+  | "reviewing"
   | "creating_pr"
   | "pr_created"
   | "completed"
@@ -90,6 +91,37 @@ export interface CreateSourceClaimInput {
   sourceKey: string;
   sourceUrl?: string;
   repoKey: string;
+}
+
+export type ReviewSeverity = "info" | "low" | "medium" | "high" | "critical";
+
+export interface ReviewFinding {
+  id: string;
+  severity: ReviewSeverity;
+  title: string;
+  description: string;
+  file?: string;
+  line?: number;
+  suggestedFix?: string;
+}
+
+export interface ReviewRecord {
+  id: string;
+  runId: string;
+  status: "passed" | "failed";
+  summary: string;
+  findings: ReviewFinding[];
+  diffStat?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateReviewRecordInput {
+  runId: string;
+  status: ReviewRecord["status"];
+  summary: string;
+  findings: ReviewFinding[];
+  diffStat?: string;
 }
 
 export interface PullRequestRecord {
@@ -203,6 +235,14 @@ export type NormalizedRunEvent =
       stderr?: string;
       stdoutPath?: string;
       stderrPath?: string;
+      error?: string;
+    }
+  | {
+      type: "review";
+      status: "running" | "passed" | "failed";
+      summary?: string;
+      findings?: ReviewFinding[];
+      diffStat?: string;
       error?: string;
     }
   | {

@@ -2,7 +2,7 @@ import { constants as fsConstants } from "node:fs";
 import { access, appendFile, cp, mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import type { AppConfig, CreatePullRequestRecordInput, CreateRunInput, CreateSourceClaimInput, NormalizedRunEvent, PullRequestRecord, RunPaths, RunRecord, RunStatus, SourceClaim, StoredRunEvent } from "../domain/types.js";
+import type { AppConfig, CreatePullRequestRecordInput, CreateReviewRecordInput, CreateRunInput, CreateSourceClaimInput, NormalizedRunEvent, PullRequestRecord, ReviewRecord, RunPaths, RunRecord, RunStatus, SourceClaim, StoredRunEvent } from "../domain/types.js";
 import { redactForStorage } from "../domain/redaction.js";
 
 interface RunsStateFile {
@@ -20,16 +20,23 @@ interface PullRequestsStateFile {
   pullRequests: PullRequestRecord[];
 }
 
+interface ReviewsStateFile {
+  version: 1;
+  reviews: ReviewRecord[];
+}
+
 export class FileStore {
   private readonly runsStatePath: string;
   private readonly claimsStatePath: string;
   private readonly pullRequestsStatePath: string;
+  private readonly reviewsStatePath: string;
   private readonly writeQueues = new Map<string, Promise<void>>();
 
   constructor(private readonly config: AppConfig) {
     this.runsStatePath = path.join(config.stateDir, "runs.json");
     this.claimsStatePath = path.join(config.stateDir, "source-claims.json");
     this.pullRequestsStatePath = path.join(config.stateDir, "pull-requests.json");
+    this.reviewsStatePath = path.join(config.stateDir, "reviews.json");
   }
 
   async init(): Promise<void> {
@@ -43,6 +50,9 @@ export class FileStore {
     }
     if (!(await exists(this.pullRequestsStatePath))) {
       await this.writePullRequestsState({ version: 1, pullRequests: [] });
+    }
+    if (!(await exists(this.reviewsStatePath))) {
+      await this.writeReviewsState({ version: 1, reviews: [] });
     }
   }
 
@@ -147,6 +157,40 @@ export class FileStore {
   async listPullRequests(): Promise<PullRequestRecord[]> {
     const state = await this.readPullRequestsState();
     return [...state.pullRequests].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }
+
+  async listReviews(): Promise<ReviewRecord[]> {
+    const state = await this.readReviewsState();
+    return [...state.reviews].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }
+
+  async getReviewForRun(runId: string): Promise<ReviewRecord | undefined> {
+    const state = await this.readReviewsState();
+    return state.reviews.find((review) => review.runId === runId);
+  }
+
+  async recordReview(input: CreateReviewRecordInput): Promise<ReviewRecord> {
+    let record: ReviewRecord;
+    await this.enqueue("__reviews__", async () => {
+      const state = await this.readReviewsState();
+      const existing = state.reviews.find((review) => review.runId === input.runId);
+      const now = new Date().toISOString();
+      record = {
+        id: existing?.id ?? `review-${randomUUID().slice(0, 12)}`,
+        runId: input.runId,
+        status: input.status,
+        summary: input.summary,
+        findings: input.findings,
+        ...(input.diffStat ? { diffStat: input.diffStat } : {}),
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      };
+      const reviews = existing
+        ? state.reviews.map((review) => review.runId === input.runId ? record : review)
+        : [record, ...state.reviews];
+      await this.writeReviewsState({ version: 1, reviews });
+    });
+    return record!;
   }
 
   async getPullRequestForRun(runId: string): Promise<PullRequestRecord | undefined> {
@@ -317,6 +361,11 @@ export class FileStore {
     return JSON.parse(text) as PullRequestsStateFile;
   }
 
+  private async readReviewsState(): Promise<ReviewsStateFile> {
+    const text = await readFile(this.reviewsStatePath, "utf8");
+    return JSON.parse(text) as ReviewsStateFile;
+  }
+
   private async writeRunsState(state: RunsStateFile): Promise<void> {
     await mkdir(path.dirname(this.runsStatePath), { recursive: true });
     const tmp = `${this.runsStatePath}.tmp`;
@@ -336,6 +385,13 @@ export class FileStore {
     const tmp = `${this.pullRequestsStatePath}.tmp`;
     await writeFile(tmp, `${JSON.stringify(state, null, 2)}\n`, "utf8");
     await rename(tmp, this.pullRequestsStatePath);
+  }
+
+  private async writeReviewsState(state: ReviewsStateFile): Promise<void> {
+    await mkdir(path.dirname(this.reviewsStatePath), { recursive: true });
+    const tmp = `${this.reviewsStatePath}.tmp`;
+    await writeFile(tmp, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+    await rename(tmp, this.reviewsStatePath);
   }
 
   private async mutateRuns(mutator: (runs: RunRecord[]) => RunRecord[]): Promise<void> {

@@ -117,6 +117,7 @@ pnpm e2e:verifier
 pnpm e2e:source-pickup
 pnpm e2e:delivery
 pnpm e2e:config-init
+pnpm e2e:review
 pnpm e2e:pi-spike
 sudo systemctl restart tasksmith
 curl -fsS http://127.0.0.1:3000/healthz

@@ -2,9 +2,9 @@
 
 ## Current status
 
-**Stage:** Phase 5 — PR delivery foundation  
-**Code status:** Manual Run, verifier, source pickup, per-repo init commands, config UI, and ready-to-review GitHub PR delivery foundations implemented  
-**Primary next milestone:** add fresh-context review and bounded fix attempts before PR delivery.
+**Stage:** Phase 6 — Fresh-context review foundation  
+**Code status:** Manual Run, verifier, source pickup, per-repo init commands, config UI, fresh-context review, and ready-to-review GitHub PR delivery foundations implemented  
+**Primary next milestone:** add bounded fix attempts from verifier/review findings, then CI fixup.
 
 TaskSmith currently has durable product/architecture docs, ADRs, research references, and implementation briefs. The next work should be a technical spike, not a full app scaffold.
 
@@ -56,8 +56,8 @@ Jira/GitHub issue marked tasksmith
 | M2 — Manual Run MVP | `[~]` | Create manual Run, run Pi in workspace, stream UI events | Browser shows live Pi work and accepts control messages |
 | M3 — Deterministic verifier | `[~]` | Run configured checks/e2e after agent work | Verification pass/fail drives next Run state |
 | M4 — Source pickup | `[~]` | Poll GitHub/Jira, claim issue, create Run, update source | Tagged issue becomes exactly one TaskSmith Run |
-| M5 — PR creation | `[~]` | Commit/push verified diff and create ready-to-review PR | PR links source issue, Run, verification; review summary pending |
-| M6 — Fresh-context review | `[ ]` | Independent review before PR readiness | Findings are structured and can block/fix |
+| M5 — PR creation | `[~]` | Commit/push verified diff and create ready-to-review PR | PR links source issue, Run, verification, review summary |
+| M6 — Fresh-context review | `[~]` | Independent review before PR readiness | Findings are structured and severe findings block delivery |
 | M7 — CI fixup | `[ ]` | Watch PR CI and fix failures | Failed CI creates bounded fix attempts |
 | M8 — Hardening | `[ ]` | Security, auth, deployment, observability | Safe enough for internal beta on real repos |
 
@@ -266,7 +266,7 @@ Turn verified changes into a ready-to-review PR and link it back to the source i
 
 ## M6 — Fresh-context review
 
-**Status:** `[ ]` Not started  
+**Status:** `[~]` Deterministic fresh-context review foundation implemented  
 **Type:** quality gate  
 **Inspired by:** Kandev Review phase, CodeForge review task type
 
@@ -276,21 +276,21 @@ A separate review pass checks the final diff before PR is marked ready.
 
 ### Tasks
 
-- [ ] Define review prompt contract.
-- [ ] Start review in separate Pi session/context.
-- [ ] Provide diff, task requirements, and verifier result to reviewer.
-- [ ] Require structured findings: severity, file, line, title, description, suggested fix.
-- [ ] Store findings.
-- [ ] Display review panel.
-- [ ] Define block policy for severe findings.
-- [ ] Optionally create fix attempt from findings.
-- [ ] Include review summary in PR.
+- [~] Define review prompt contract: deterministic diff-review contract exists; LLM prompt contract still pending.
+- [~] Start review in separate Pi session/context: current reviewer is a separate deterministic TaskSmith context, not the implementation session; Pi-backed reviewer pending.
+- [x] Provide diff, task requirements/source metadata, and verifier result context to reviewer via persisted diff/run metadata.
+- [x] Require structured findings: severity, file, line, title, description, suggested fix.
+- [x] Store findings.
+- [~] Display review panel: review events render in stream; dedicated review panel still pending.
+- [x] Define block policy for severe findings: `high`/`critical` block delivery.
+- [ ] Create fix attempt from findings.
+- [x] Include review summary in PR.
 
 ### Exit gate
 
-- [ ] Implementation context is not reused for review.
-- [ ] Review findings are structured and persisted.
-- [ ] Severe findings block PR readiness or trigger fix.
+- [x] Implementation context is not reused for deterministic review.
+- [x] Review findings are structured and persisted.
+- [x] Severe findings block PR readiness in review e2e.
 
 ## M7 — CI fixup
 

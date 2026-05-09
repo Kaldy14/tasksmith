@@ -5,6 +5,7 @@ import type {
   NormalizedRunEvent,
   PullRequestRecord,
   RepositoryConfig,
+  ReviewRecord,
   RunPaths,
   RunRecord,
 } from "../domain/types.js";
@@ -40,7 +41,7 @@ export class PullRequestDelivery {
     private readonly store: FileStore,
   ) {}
 
-  async deliver(run: RunRecord, paths: RunPaths, emit: DeliveryEmitter): Promise<DeliveryResult> {
+  async deliver(run: RunRecord, paths: RunPaths, review: ReviewRecord, emit: DeliveryEmitter): Promise<DeliveryResult> {
     const repo = this.config.repositories[run.repoKey];
     const workflow = repo?.workflow ?? this.config.workflow;
     if (workflow.deliveryMode === "squash_merge_main") {
@@ -86,7 +87,7 @@ export class PullRequestDelivery {
     const branch = buildBranchName(run);
     const baseBranch = repo.defaultBranch ?? "main";
     const prTitle = buildPullRequestTitle(run);
-    const prBody = buildPullRequestBody(run, changedFiles, this.config.publicBaseUrl);
+    const prBody = buildPullRequestBody(run, changedFiles, review, this.config.publicBaseUrl);
 
     await emitCommand(emit, `git checkout -B ${branch}`, runGit(["checkout", "-B", branch], paths.workspaceDir, repo));
     await emitCommand(emit, "git add -A", runGit(["add", "-A"], paths.workspaceDir, repo));
@@ -129,7 +130,7 @@ export class PullRequestDelivery {
       body: prBody,
     });
 
-    const sourceUpdateError = await updateSourceWithPullRequest(run, repo.gitProvider, pullRequest, this.config.publicBaseUrl);
+    const sourceUpdateError = await updateSourceWithPullRequest(run, repo.gitProvider, pullRequest, review, this.config.publicBaseUrl);
     const summary = `Ready-to-review PR created: ${pullRequest.url}`;
     await emit({
       type: "delivery",
@@ -219,7 +220,7 @@ function commitSubject(run: RunRecord): string {
   return `TaskSmith: ${source}`.slice(0, 100);
 }
 
-function buildPullRequestBody(run: RunRecord, changedFiles: readonly string[], publicBaseUrl: string): string {
+function buildPullRequestBody(run: RunRecord, changedFiles: readonly string[], review: ReviewRecord, publicBaseUrl: string): string {
   const runUrl = `${publicBaseUrl}/runs/${run.id}`;
   const sourceUrl = run.source?.url;
   const sourceLine = sourceUrl ? `[${run.source?.key ?? "source issue"}](${sourceUrl})` : run.source?.key ?? "manual run";
@@ -230,7 +231,7 @@ function buildPullRequestBody(run: RunRecord, changedFiles: readonly string[], p
     `Source: ${sourceLine}`,
     `Repository: ${run.repoKey}`,
     "Verification: passed before PR creation.",
-    "Review: fresh-context review is not implemented yet.",
+    `Review: ${review.summary}`,
     "",
     "Changed files:",
     ...changedFiles.slice(0, 50).map((file) => `- ${file}`),
@@ -276,10 +277,11 @@ async function updateSourceWithPullRequest(
   run: RunRecord,
   provider: GitHubProviderConfig,
   pullRequest: PullRequestRecord,
+  review: ReviewRecord,
   publicBaseUrl: string,
 ): Promise<string | undefined> {
   if (!run.source) return undefined;
-  const body = buildSourcePullRequestComment(run, pullRequest, publicBaseUrl);
+  const body = buildSourcePullRequestComment(run, pullRequest, review, publicBaseUrl);
   try {
     if (run.source.type === "github_issue") {
       const issueNumber = parseIssueNumber(run.source.key);
@@ -298,8 +300,8 @@ async function updateSourceWithPullRequest(
   }
 }
 
-function buildSourcePullRequestComment(run: RunRecord, pullRequest: PullRequestRecord, publicBaseUrl: string): string {
-  return `TaskSmith created a ready-to-review PR:\n\n${pullRequest.url}\n\nVerification: passed\nReview: not yet implemented\nRun: ${publicBaseUrl}/runs/${run.id}`;
+function buildSourcePullRequestComment(run: RunRecord, pullRequest: PullRequestRecord, review: ReviewRecord, publicBaseUrl: string): string {
+  return `TaskSmith created a ready-to-review PR:\n\n${pullRequest.url}\n\nVerification: passed\nReview: ${review.summary}\nRun: ${publicBaseUrl}/runs/${run.id}`;
 }
 
 function parseIssueNumber(sourceKey: string): number | undefined {

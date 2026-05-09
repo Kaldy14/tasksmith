@@ -1,7 +1,8 @@
-import type { ControlKind, NormalizedRunEvent, RepositoryConfig, RunPaths, RunRecord, RuntimeHandle, StoredRunEvent } from "../domain/types.js";
+import type { ControlKind, NormalizedRunEvent, RepositoryConfig, ReviewRecord, RunPaths, RunRecord, RuntimeHandle, StoredRunEvent } from "../domain/types.js";
 import type { FileStore } from "../storage/file-store.js";
 import type { EventHub } from "../server/event-hub.js";
 import type { PullRequestDelivery } from "../delivery/pull-request-delivery.js";
+import type { FreshContextReviewer } from "../review/fresh-context-reviewer.js";
 import type { DeterministicVerifier } from "../verifier/deterministic-verifier.js";
 import { DemoRuntime, type RuntimeSink } from "./demo-adapter.js";
 import { PiRuntime } from "./pi-adapter.js";
@@ -17,6 +18,7 @@ export class RuntimeManager {
     private readonly store: FileStore,
     private readonly hub: EventHub,
     private readonly verifier: DeterministicVerifier,
+    private readonly reviewer: FreshContextReviewer,
     private readonly delivery: PullRequestDelivery,
     repositories: Readonly<Record<string, RepositoryConfig>>,
   ) {
@@ -129,16 +131,36 @@ export class RuntimeManager {
       return;
     }
 
-    await this.deliverVerifiedRun(runId, result.summary);
+    await this.reviewVerifiedRun(runId, result.summary);
   }
 
-  private async deliverVerifiedRun(runId: string, verificationSummary: string): Promise<void> {
+  private async reviewVerifiedRun(runId: string, verificationSummary: string): Promise<void> {
+    await this.store.updateRun(runId, { status: "reviewing" });
+    await this.emit(runId, { type: "run_status", status: "reviewing", detail: "Running fresh-context review" });
+
+    const run = await this.requireRun(runId);
+    const reviewInput = await this.reviewer.review(run, this.store.pathsForRun(runId), async (event) => {
+      await this.emit(runId, event);
+    });
+    const review = await this.store.recordReview({ runId, ...reviewInput });
+
+    if (review.status === "failed") {
+      await this.store.updateRun(runId, { status: "failed", error: `Review failed: ${review.summary}`, finishedAt: new Date().toISOString() });
+      await this.emit(runId, { type: "error", message: "Review blocked delivery", detail: review.summary });
+      await this.emit(runId, { type: "run_status", status: "failed", detail: review.summary });
+      return;
+    }
+
+    await this.deliverReviewedRun(runId, verificationSummary, review);
+  }
+
+  private async deliverReviewedRun(runId: string, verificationSummary: string, review: ReviewRecord): Promise<void> {
     const run = await this.requireRun(runId);
     await this.store.updateRun(runId, { status: "creating_pr" });
     await this.emit(runId, { type: "run_status", status: "creating_pr", detail: "Preparing delivery" });
 
     try {
-      const result = await this.delivery.deliver(run, this.store.pathsForRun(runId), async (event) => {
+      const result = await this.delivery.deliver(run, this.store.pathsForRun(runId), review, async (event) => {
         await this.emit(runId, event);
       });
       if (result.status === "created" && result.pullRequest) {

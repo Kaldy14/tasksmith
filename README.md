@@ -65,7 +65,7 @@ When starting work in this repository, read these files first:
 
 ## Current status
 
-Manual Run, deterministic verification, GitHub/Jira source pickup, and ready-to-review GitHub PR delivery foundations are implemented. The repository includes:
+Manual Run, deterministic verification, GitHub/Jira source pickup, fresh-context review, and ready-to-review GitHub PR delivery foundations are implemented. The repository includes:
 
 - a standalone Pi SDK runtime spike harness,
 - a Node/TypeScript API server,
@@ -76,7 +76,8 @@ Manual Run, deterministic verification, GitHub/Jira source pickup, and ready-to-
 - configured repository/source metadata,
 - a GitHub Issues/Jira poll endpoint with file-backed idempotent claims,
 - deterministic verifier events and redacted logs,
-- ready-to-review GitHub PR creation after verification for configured repositories.
+- fresh-context diff review with structured findings and blocking severe findings,
+- ready-to-review GitHub PR creation after verification/review for configured repositories.
 
 See:
 
@@ -94,6 +95,7 @@ pnpm e2e:verifier
 pnpm e2e:source-pickup
 pnpm e2e:delivery
 pnpm e2e:config-init
+pnpm e2e:review
 pnpm e2e:pi-spike
 TASKSMITH_REAL_PI_E2E=1 pnpm e2e:pi-spike
 ```

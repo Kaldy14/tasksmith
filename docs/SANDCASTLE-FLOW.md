@@ -86,12 +86,13 @@ Implemented now:
 - workflow config parsing/exposure,
 - manual runs against configured repos,
 - GitHub Issues and Jira source polling with idempotent claims,
-- ready-to-review GitHub PR creation after deterministic verification.
+- fresh-context diff review with structured findings and severe-finding blocking,
+- ready-to-review GitHub PR creation after deterministic verification and review.
 
 Still to implement:
 
 - Jira status/label transitions beyond Run-link/PR-link comments,
 - planning pass,
-- fresh-context deep review,
+- LLM-backed deep review beyond the deterministic fresh-context guardrail reviewer,
 - bounded fix attempts,
 - optional squash merge to main.

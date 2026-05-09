@@ -89,6 +89,11 @@ async function routeHttp(deps: ServerDeps, req: IncomingMessage, res: ServerResp
     return;
   }
 
+  if (method === "GET" && url.pathname === "/api/reviews") {
+    sendJson(res, 200, { reviews: await deps.store.listReviews() });
+    return;
+  }
+
   if (method === "GET" && url.pathname === "/api/runs") {
     sendJson(res, 200, { runs: await deps.store.listRuns() });
     return;
@@ -107,6 +112,15 @@ async function routeHttp(deps: ServerDeps, req: IncomingMessage, res: ServerResp
     const run = await deps.store.getRun(decodeURIComponent(runMatch[1] ?? ""));
     if (!run) return sendJson(res, 404, { error: "Run not found" });
     sendJson(res, 200, { run });
+    return;
+  }
+
+  const reviewMatch = /^\/api\/runs\/([^/]+)\/review$/.exec(url.pathname);
+  if (method === "GET" && reviewMatch) {
+    const runId = decodeURIComponent(reviewMatch[1] ?? "");
+    const review = await deps.store.getReviewForRun(runId);
+    if (!review) return sendJson(res, 404, { error: "Review not found" });
+    sendJson(res, 200, { review });
     return;
   }
 

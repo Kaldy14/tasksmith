@@ -24,6 +24,7 @@ const TYPE_LABEL: Record<string, string> = {
   queue_update: "Queue",
   session_state: "Session",
   verification: "Verification",
+  review: "Review",
   delivery: "Delivery",
   error: "Error",
   attempt_done: "Attempt done",
@@ -58,6 +59,8 @@ function summarize(event: StoredRunEvent): string {
       return `session=${data.sessionId} · messages=${data.messageCount} · streaming=${data.isStreaming}`;
     case "verification":
       return formatVerification(data);
+    case "review":
+      return formatReview(data);
     case "delivery":
       return formatDelivery(data);
     case "error":
@@ -77,6 +80,8 @@ const CONTROL_TEXT = {
 
 type VerificationEvent = Extract<StoredRunEvent["data"], { type: "verification" }>;
 
+type ReviewEvent = Extract<StoredRunEvent["data"], { type: "review" }>;
+
 type DeliveryEvent = Extract<StoredRunEvent["data"], { type: "delivery" }>;
 
 function formatVerification(data: VerificationEvent): string {
@@ -85,6 +90,22 @@ function formatVerification(data: VerificationEvent): string {
   if (data.durationMs !== undefined) lines.push(`duration=${data.durationMs}ms`);
   if (data.stdout) lines.push(`stdout:\n${data.stdout.trimEnd()}`);
   if (data.stderr) lines.push(`stderr:\n${data.stderr.trimEnd()}`);
+  if (data.error) lines.push(`error=${data.error}`);
+  return lines.join("\n");
+}
+
+function formatReview(data: ReviewEvent): string {
+  const lines = [`review: ${data.status}`];
+  if (data.summary) lines.push(data.summary);
+  if (data.diffStat) lines.push(`diff stat:\n${data.diffStat}`);
+  if (data.findings && data.findings.length > 0) {
+    lines.push("findings:");
+    for (const finding of data.findings) {
+      lines.push(`- [${finding.severity}] ${finding.title}${finding.file ? ` (${finding.file}${finding.line ? `:${finding.line}` : ""})` : ""}`);
+      lines.push(`  ${finding.description}`);
+      if (finding.suggestedFix) lines.push(`  fix: ${finding.suggestedFix}`);
+    }
+  }
   if (data.error) lines.push(`error=${data.error}`);
   return lines.join("\n");
 }
@@ -122,13 +143,14 @@ function isWorkEvent(type: string): boolean {
     type === "queue_update" ||
     type === "session_state" ||
     type === "verification" ||
+    type === "review" ||
     type === "delivery"
   );
 }
 
 function workToneClass(type: string): string {
   if (type === "tool_result") return "text-jade";
-  if (type === "verification" || type === "delivery") return "text-jade";
+  if (type === "verification" || type === "review" || type === "delivery") return "text-jade";
   if (type === "command" || type === "command_output") return "text-copper";
   return "text-muted-foreground/75";
 }

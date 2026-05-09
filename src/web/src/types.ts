@@ -4,6 +4,7 @@ export type RunStatus =
   | "running"
   | "waiting_for_control"
   | "verifying"
+  | "reviewing"
   | "creating_pr"
   | "pr_created"
   | "completed"
@@ -22,6 +23,18 @@ export interface RunSourceSnapshot {
   url?: string;
   body?: string;
   labels: string[];
+}
+
+export type ReviewSeverity = "info" | "low" | "medium" | "high" | "critical";
+
+export interface ReviewFinding {
+  id: string;
+  severity: ReviewSeverity;
+  title: string;
+  description: string;
+  file?: string;
+  line?: number;
+  suggestedFix?: string;
 }
 
 export interface PullRequestSummary {
@@ -137,6 +150,14 @@ export type NormalizedRunEvent =
       stderr?: string;
       stdoutPath?: string;
       stderrPath?: string;
+      error?: string;
+    }
+  | {
+      type: "review";
+      status: "running" | "passed" | "failed";
+      summary?: string;
+      findings?: ReviewFinding[];
+      diffStat?: string;
       error?: string;
     }
   | {
