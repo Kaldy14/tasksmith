@@ -133,6 +133,33 @@ Then add to the systemd unit:
 Environment=TASKSMITH_CONFIG_PATH=/opt/tasksmith/config/repos.json
 ```
 
+## Postgres metadata index
+
+TaskSmith can mirror run/source/PR/review metadata into Postgres while keeping Pi session/chat files and event JSONL on disk. Enable it with:
+
+```txt
+TASKSMITH_DATABASE_URL=postgres://tasksmith:<password>@127.0.0.1:5432/tasksmith
+```
+
+When this is set, startup applies metadata-index migrations and syncs existing file-backed state into Postgres through Drizzle ORM. New writes are mirrored for:
+
+- `tasksmith_runs`
+- `tasksmith_source_claims`
+- `tasksmith_pull_requests`
+- `tasksmith_reviews`
+- `tasksmith_event_checkpoints`
+
+The database stores pointers such as `normalized_events_path`, `raw_events_path`, `control_events_path`, `run_dir`, and `workspace_dir`. It does not store raw Pi chat/session transcripts; those stay in the per-run filesystem artifacts.
+
+Useful commands:
+
+```bash
+pnpm db:migrate        # apply metadata-index migrations only
+pnpm db:sync-metadata  # migrate and resync file-backed state into Postgres
+```
+
+Better Auth should use the same Postgres database later, with its own migrations/tables for users, sessions, accounts, and verification tokens.
+
 GitHub auth for private repositories should be configured for the `deploy` user. The GitHub Issues example config points at `/home/deploy/.config/gh-kaldy14`.
 
 ```bash

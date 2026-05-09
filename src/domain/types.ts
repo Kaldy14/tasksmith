@@ -298,6 +298,7 @@ export interface AppConfig {
   piAuthSourceDir: string;
   publicDir: string;
   publicBaseUrl: string;
+  databaseUrl?: string;
   configFilePath?: string;
   repositories: Record<string, RepositoryConfig>;
   sourceFlow: SourceFlowConfig;

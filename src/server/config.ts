@@ -32,6 +32,7 @@ export function loadConfig(): AppConfig {
   const dataDir = path.resolve(process.env.TASKSMITH_DATA_DIR ?? ".data/tasksmith");
   const configFilePath = getConfigFilePath();
   const fileConfig = parseConfigFile(configFilePath);
+  const databaseUrl = parseOptionalDatabaseUrl(process.env.TASKSMITH_DATABASE_URL);
   return {
     port: parsePort(process.env.PORT ?? "3000"),
     host: process.env.HOST ?? "0.0.0.0",
@@ -41,6 +42,7 @@ export function loadConfig(): AppConfig {
     piAuthSourceDir: path.resolve(process.env.TASKSMITH_PI_AUTH_SOURCE ?? "/run/tasksmith/pi-auth"),
     publicDir: path.join(repoRoot, "dist", "web"),
     publicBaseUrl: parsePublicBaseUrl(process.env.TASKSMITH_PUBLIC_URL, process.env.HOST ?? "0.0.0.0", process.env.PORT ?? "3000"),
+    ...(databaseUrl ? { databaseUrl } : {}),
     ...(configFilePath ? { configFilePath } : {}),
     repositories: fileConfig?.repos ?? {},
     sourceFlow: fileConfig?.sourceFlow ?? defaultSourceFlow(),
@@ -338,6 +340,15 @@ function parseTimeout(value: unknown, label: string): number {
     throw new Error(`${label} must be an integer between 1 and 3600000`);
   }
   return value;
+}
+
+function parseOptionalDatabaseUrl(value: string | undefined): string | undefined {
+  if (!value?.trim()) return undefined;
+  const parsed = new URL(value.trim());
+  if (parsed.protocol !== "postgres:" && parsed.protocol !== "postgresql:") {
+    throw new Error("TASKSMITH_DATABASE_URL must use postgres:// or postgresql://");
+  }
+  return parsed.toString();
 }
 
 function parsePublicBaseUrl(value: string | undefined, host: string, port: string): string {

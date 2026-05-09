@@ -54,7 +54,7 @@ TaskSmith should be built around **Runs** and **Events**, not around raw agent p
                                 ▼                         ▼
                        ┌─────────────────┐       ┌────────────────┐
                        │ Postgres         │◀──────│ Worker          │
-                       │ runs/events/etc. │       │ Pi runtime      │
+                       │ metadata/indexes │       │ Pi runtime      │
                        └─────────────────┘       └───────┬────────┘
                                                           │
                                                           ▼
@@ -75,7 +75,7 @@ Responsibilities:
 - expose WebSocket run stream,
 - accept user control messages,
 - provide admin configuration APIs,
-- write events to event store.
+- write events to the file-backed event store and mirror metadata checkpoints to Postgres when configured.
 
 ### Source Poller
 
@@ -197,6 +197,29 @@ failed
 skipped
 ```
 
+## Persistence split
+
+The current implementation deliberately keeps Pi/session artifacts on disk and uses Postgres only as an optional metadata/index mirror when `TASKSMITH_DATABASE_URL` is set.
+
+Filesystem remains authoritative for:
+
+- Pi session/chat files under each Run directory,
+- raw Pi JSONL events,
+- normalized TaskSmith event JSONL,
+- control JSONL,
+- verifier/reviewer logs and artifacts,
+- per-run workspace and home/session directories.
+
+Postgres stores queryable metadata and pointers:
+
+- run/source/status/attempt/timestamp rows,
+- source claim uniqueness/index rows,
+- pull request and review metadata,
+- event checkpoints and JSONL file paths,
+- future Better Auth user/session/account/verification tables.
+
+The current `FileStore` is still the primary runtime store and is not safe for multiple app processes writing at the same time. Moving operational writes to Postgres and adding a real queue remains a later hardening slice.
+
 ## Suggested database entities
 
 ### `runs`
@@ -232,17 +255,19 @@ skipped
 - `started_at`
 - `finished_at`
 
-### `events`
+### `event_checkpoints`
 
-- `id`
 - `run_id`
-- `attempt_id`
-- `sequence`
-- `type`
-- `role`
-- `content`
-- `raw_json`
-- `created_at`
+- `normalized_events_path`
+- `raw_events_path`
+- `control_events_path`
+- `last_sequence`
+- `last_event_id`
+- `last_event_type`
+- `last_event_created_at`
+- `updated_at`
+
+Raw/normalized events themselves remain JSONL artifacts for now. A later migration may index selected event rows if UI/search performance requires it.
 
 ### `verification_results`
 

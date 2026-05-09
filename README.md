@@ -77,7 +77,8 @@ Manual Run, deterministic verification, GitHub/Jira source pickup, fresh-context
 - a GitHub Issues/Jira poll endpoint with file-backed idempotent claims,
 - deterministic verifier events and redacted logs,
 - fresh-context diff review with structured findings and blocking severe findings,
-- ready-to-review GitHub PR creation after verification/review for configured repositories.
+- ready-to-review GitHub PR creation after verification/review for configured repositories,
+- optional Postgres metadata indexing via `TASKSMITH_DATABASE_URL` while Pi chats/events/artifacts remain file-backed.
 
 See:
 
@@ -97,5 +98,6 @@ pnpm e2e:delivery
 pnpm e2e:config-init
 pnpm e2e:review
 pnpm e2e:pi-spike
+pnpm e2e:postgres-index   # skips unless TASKSMITH_TEST_DATABASE_URL is set
 TASKSMITH_REAL_PI_E2E=1 pnpm e2e:pi-spike
 ```

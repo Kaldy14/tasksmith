@@ -43,6 +43,7 @@ Agent sandbox may receive:
 
 Agent sandbox must not receive:
 
+- TaskSmith/Postgres/Better Auth database credentials,
 - production DB credentials,
 - production cloud credentials,
 - all-user home directory,
@@ -54,6 +55,12 @@ Agent sandbox must not receive:
 ### Dedicated-host MVP
 
 The current MVP runs directly on a dedicated TaskSmith server. This is acceptable for the initial deployment model because the whole host is assigned to TaskSmith, and stronger sandboxing is explicitly deferred.
+
+## Database boundary
+
+Postgres is an app-side metadata/auth database. It must bind to localhost or a private network only, and `TASKSMITH_DATABASE_URL` must stay in root-owned systemd env files outside the repository. The server loads this URL into config and removes it from `process.env` before Pi can start, which prevents normal child-process environment inheritance. This is not a complete same-UID sandbox: Linux procfs and unrestricted shell tools are still reasons to move Pi/tool execution to a separate restricted user or container before storing high-value secrets for public deployments. Never copy the database URL into per-run homes, workspaces, prompts, verifier logs, or Pi session material.
+
+TaskSmith stores Pi chat/session files and event JSONL on disk under the Run directory. Postgres stores indexes and pointers to those files, not raw Pi transcripts.
 
 ### Docker
 

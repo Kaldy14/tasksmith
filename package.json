@@ -11,7 +11,9 @@
     "dev:web": "vite --config src/web/vite.config.ts",
     "build:web": "vite build --config src/web/vite.config.ts",
     "build": "pnpm build:web",
-    "verify": "pnpm typecheck && pnpm typecheck:web && pnpm build && pnpm e2e:manual-run && pnpm e2e:verifier && pnpm e2e:source-pickup && pnpm e2e:delivery && pnpm e2e:config-init && pnpm e2e:review && pnpm e2e:pi-spike",
+    "verify": "pnpm typecheck && pnpm typecheck:web && pnpm build && pnpm e2e:manual-run && pnpm e2e:verifier && pnpm e2e:source-pickup && pnpm e2e:delivery && pnpm e2e:config-init && pnpm e2e:review && pnpm e2e:pi-spike && pnpm e2e:postgres-index",
+    "db:migrate": "tsx scripts/db-migrate.ts",
+    "db:sync-metadata": "tsx scripts/db-sync-metadata.ts",
     "pi:spike": "tsx scripts/pi-runtime-spike.ts",
     "e2e:pi-spike": "tsx scripts/e2e-pi-runtime-spike.ts",
     "e2e:manual-run": "tsx scripts/e2e-manual-run-api.ts",
@@ -19,7 +21,8 @@
     "e2e:source-pickup": "tsx scripts/e2e-source-pickup.ts",
     "e2e:delivery": "tsx scripts/e2e-delivery.ts",
     "e2e:config-init": "tsx scripts/e2e-config-init.ts",
-    "e2e:review": "tsx scripts/e2e-review.ts"
+    "e2e:review": "tsx scripts/e2e-review.ts",
+    "e2e:postgres-index": "tsx scripts/e2e-postgres-index.ts"
   },
   "dependencies": {
     "@mariozechner/pi-agent-core": "0.73.0",
@@ -33,7 +36,9 @@
     "@tanstack/react-router": "^1.169.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "drizzle-orm": "^0.45.2",
     "lucide-react": "^1.14.0",
+    "pg": "^8.20.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "tailwind-merge": "^3.5.0",
@@ -43,6 +48,7 @@
     "@tailwindcss/vite": "^4.2.4",
     "@tanstack/router-devtools": "^1.166.13",
     "@types/node": "^24.0.0",
+    "@types/pg": "^8.20.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/ws": "^8.5.13",

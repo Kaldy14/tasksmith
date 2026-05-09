@@ -9,6 +9,7 @@ import { SourcePoller } from "../sources/source-poller.js";
 import { createTaskSmithServer } from "./http.js";
 
 const config = loadConfig();
+scrubRuntimeSecretsFromProcessEnv();
 const store = new FileStore(config);
 await store.init();
 await store.markActiveRunsFailedOnBoot();
@@ -26,7 +27,12 @@ const server = createTaskSmithServer({ config, store, runtime, sourcePoller, hub
 server.listen(config.port, config.host, () => {
   console.log(`TaskSmith listening on http://${config.host}:${config.port}`);
   console.log(`Data dir: ${config.dataDir}`);
+  console.log(`Postgres metadata index: ${store.hasMetadataIndex() ? "enabled" : "disabled"}`);
 });
+
+function scrubRuntimeSecretsFromProcessEnv(): void {
+  delete process.env.TASKSMITH_DATABASE_URL;
+}
 
 function startSourcePolling(sourcePoller: SourcePoller, intervalSeconds: number): void {
   let inFlight = false;
@@ -48,7 +54,9 @@ function startSourcePolling(sourcePoller: SourcePoller, intervalSeconds: number)
 }
 
 function shutdown(): void {
-  server.close(() => process.exit(0));
+  server.close(() => {
+    void store.close().finally(() => process.exit(0));
+  });
   setTimeout(() => process.exit(0), 5_000).unref();
 }
 

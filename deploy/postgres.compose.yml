@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tasksmith-postgres
+    restart: unless-stopped
+    env_file:
+      - ${TASKSMITH_POSTGRES_ENV_FILE:-/opt/tasksmith/secrets/postgres.env}
+    ports:
+      - "127.0.0.1:${TASKSMITH_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - type: bind
+        source: ${TASKSMITH_POSTGRES_DATA:-/opt/tasksmith/postgres-data}
+        target: /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s

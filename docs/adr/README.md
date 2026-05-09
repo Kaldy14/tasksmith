@@ -8,6 +8,7 @@ ADRs capture decisions that should not depend on chat history.
 - [0002: Keep Jira as the source of truth for task intake](./0002-jira-remains-source-of-truth.md)
 - [0003: Render the run UI from persisted events](./0003-event-sourced-run-ui.md)
 - [0004: Run deterministic verification outside the agent](./0004-deterministic-verification-outside-agent.md)
+- [0005: Use Postgres for metadata indexes while keeping Pi sessions and artifacts on disk](./0005-postgres-for-metadata-files-for-artifacts.md)
 
 ## Template
 

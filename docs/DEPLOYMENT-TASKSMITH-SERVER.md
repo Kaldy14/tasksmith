@@ -27,6 +27,7 @@ Public bind: none yet; app listens on 127.0.0.1:3000
 - Added 4 GiB swapfile.
 - Set basic inotify limits for repo/test workloads.
 - Created `/opt/tasksmith/{app,data,secrets}` owned by `deploy`.
+- Dockerized Postgres can be run with data under `/opt/tasksmith/postgres-data` and bound to `127.0.0.1:5432` only.
 
 ## Current runtime model
 
@@ -80,6 +81,8 @@ TaskSmith is configured with:
 TASKSMITH_PI_AUTH_SOURCE=/home/deploy/.pi/agent
 TASKSMITH_CONFIG_PATH=/opt/tasksmith/config/repos.json
 TASKSMITH_PUBLIC_URL=https://tasksmith.tail1a218f.ts.net
+# Optional Postgres metadata/auth foundation:
+# TASKSMITH_DATABASE_URL=postgres://tasksmith:<password>@127.0.0.1:5432/tasksmith
 # Optional after GitHub/Jira auth is ready:
 # TASKSMITH_SOURCE_POLLING=1
 # TASKSMITH_JIRA_BASE_URL=https://your-site.atlassian.net
@@ -88,6 +91,62 @@ TASKSMITH_PUBLIC_URL=https://tasksmith.tail1a218f.ts.net
 ```
 
 For each Run, TaskSmith copies only narrow Pi auth/config material into the per-run directory. It must not mount or copy the full deploy home directory.
+
+## Dockerized Postgres
+
+TaskSmith itself still runs directly on the host through systemd, but Postgres should run in Docker and bind only to localhost.
+
+On the server:
+
+```bash
+sudo mkdir -p /opt/tasksmith/config /opt/tasksmith/secrets /opt/tasksmith/postgres-data
+sudo chown -R deploy:deploy /opt/tasksmith/config /opt/tasksmith/postgres-data
+sudo chown root:root /opt/tasksmith/secrets
+sudo chmod 700 /opt/tasksmith/secrets
+sudo cp /opt/tasksmith/app/config/examples/postgres.env.example /opt/tasksmith/secrets/postgres.env
+sudo chmod 600 /opt/tasksmith/secrets/postgres.env
+# Edit POSTGRES_PASSWORD in /opt/tasksmith/secrets/postgres.env.
+
+cd /opt/tasksmith/app
+sudo TASKSMITH_POSTGRES_ENV_FILE=/opt/tasksmith/secrets/postgres.env docker compose -f deploy/postgres.compose.yml up -d
+```
+
+Create `/opt/tasksmith/secrets/tasksmith.env` for app-only environment values. Keep this file root-owned so the `deploy` user and Pi bash tool cannot read it directly after systemd loads the service environment:
+
+```bash
+sudo tee /opt/tasksmith/secrets/tasksmith.env >/dev/null <<'EOF'
+TASKSMITH_DATABASE_URL=postgres://tasksmith:<same-password>@127.0.0.1:5432/tasksmith
+EOF
+sudo chown root:root /opt/tasksmith/secrets/tasksmith.env
+sudo chmod 600 /opt/tasksmith/secrets/tasksmith.env
+```
+
+The tracked systemd unit includes:
+
+```txt
+EnvironmentFile=-/opt/tasksmith/secrets/tasksmith.env
+```
+
+Apply migrations/sync and restart:
+
+```bash
+cd /opt/tasksmith/app
+pnpm db:migrate
+pnpm db:sync-metadata
+sudo systemctl daemon-reload
+sudo systemctl restart tasksmith
+curl -fsS http://127.0.0.1:3000/healthz
+```
+
+The health response reports `metadataIndex: "postgres"` when the app is using the Postgres index. Pi chat/session files and event JSONL remain under `/opt/tasksmith/data/runs/<run-id>/`; Postgres stores metadata and file pointers only.
+
+Security note: the server removes `TASKSMITH_DATABASE_URL` from `process.env` after loading config, and the app env file should be root-owned. This prevents normal child-process env inheritance and direct file reads by the `deploy` user, but same-UID `/proc` exposure is still a hardening gap while Pi bash runs in the app process context. Do not store production/high-value secrets in this database until Pi/tool execution runs under a separate restricted user/container or equivalent isolation.
+
+Backup example:
+
+```bash
+docker exec tasksmith-postgres pg_dump -U tasksmith -d tasksmith --clean --if-exists > /opt/tasksmith/backups/tasksmith-$(date +%Y%m%d-%H%M%S).sql
+```
 
 ## Direct host deployment/test commands
 

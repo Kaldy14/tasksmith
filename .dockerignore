@@ -9,7 +9,9 @@ coverage
 src/server/public
 .env
 .env.*
+*.env
 !.env.example
+!*.env.example
 *.pem
 *.key
 .pi

@@ -103,13 +103,18 @@ For each Run:
   metadata.json
 ```
 
-Run index:
+Run/source/review/PR state files:
 
 ```txt
 <TASKSMITH_DATA_DIR>/state/runs.json
+<TASKSMITH_DATA_DIR>/state/source-claims.json
+<TASKSMITH_DATA_DIR>/state/pull-requests.json
+<TASKSMITH_DATA_DIR>/state/reviews.json
 ```
 
-This file store is sufficient for Phase 2 manual operation and deterministic tests. A later production hardening slice can move the same Run/Event model to Postgres without changing the UI contract.
+When `TASKSMITH_DATABASE_URL` is set, TaskSmith also migrates and syncs a Postgres metadata index. The database stores run/source/status/attempt/timestamp rows, source claims, PR records, review records, and event checkpoints that point back to the JSONL files. Pi session/chat files, raw events, normalized events, logs, artifacts, and workspaces remain file-backed under the Run directory.
+
+This file-first store is sufficient for the current single-process deployment and deterministic tests. Postgres is now available as the metadata/auth foundation, but the current `FileStore` is not yet a multi-writer operational database.
 
 ## Deterministic verifier slice
 
@@ -194,7 +199,7 @@ The Docker image now defaults to `pnpm start` and exposes port `3000`. `docker-c
 ## Known limitations
 
 - Active runs are not resumed after process restart; non-terminal runs are marked failed on boot.
-- File store is not intended as the final multi-worker database.
+- File store is not intended as the final multi-worker database; Postgres currently mirrors metadata/indexes, not raw Pi chats or all operational writes.
 - Demo runtime is for deterministic e2e only.
 - Real Pi runtime requires provisioning narrow auth files under `TASKSMITH_PI_AUTH_SOURCE`.
 - Fresh-context review, bounded fix attempts, Jira status transitions, and CI fixup are still later phases.

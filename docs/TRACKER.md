@@ -3,8 +3,8 @@
 ## Current status
 
 **Stage:** Phase 6 — Fresh-context review foundation  
-**Code status:** Manual Run, verifier, bounded verifier fix attempts, source pickup, per-repo init commands, config UI, fresh-context review, and ready-to-review GitHub PR delivery foundations implemented  
-**Primary next milestone:** extend bounded fix attempts to review findings, then CI fixup.
+**Code status:** Manual Run, verifier, bounded verifier fix attempts, source pickup, per-repo init commands, config UI, fresh-context review, ready-to-review GitHub PR delivery, and optional Postgres metadata indexing foundations implemented  
+**Primary next milestone:** Better Auth on Postgres, then extend bounded fix attempts to review findings and CI fixup.
 
 TaskSmith currently has durable product/architecture docs, ADRs, research references, and implementation briefs. The next work should be a technical spike, not a full app scaffold.
 
@@ -136,7 +136,7 @@ Before Jira automation, manually start a Run and watch/control the Pi session fr
 ### Backend tasks
 
 - [x] Choose app stack and package layout: Node/TypeScript monolith for Phase 2.
-- [~] Create persistence model for `runs`, `attempts`, `events`: file store for Phase 2, Postgres later.
+- [~] Create persistence model for `runs`, `attempts`, `events`: file store remains primary for runs/events/artifacts; optional Postgres metadata index is implemented for run/source/PR/review/event checkpoints.
 - [x] Implement initial Run state machine.
 - [x] Implement event append API with per-run sequence numbers.
 - [x] Implement in-process worker/runtime manager.

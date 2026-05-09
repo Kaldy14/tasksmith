@@ -15,6 +15,7 @@ Environment=TASKSMITH_DATA_DIR=/opt/tasksmith/data
 Environment=TASKSMITH_PI_AUTH_SOURCE=/home/deploy/.pi/agent
 Environment=TASKSMITH_CONFIG_PATH=/opt/tasksmith/config/repos.json
 Environment=TASKSMITH_PUBLIC_URL=https://tasksmith.tail1a218f.ts.net
+EnvironmentFile=-/opt/tasksmith/secrets/tasksmith.env
 Environment=PI_SKIP_VERSION_CHECK=1
 Environment=PI_TELEMETRY=0
 ExecStartPre=/usr/local/bin/pnpm build
