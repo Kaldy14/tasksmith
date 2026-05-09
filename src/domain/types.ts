@@ -172,6 +172,7 @@ export interface RepositoryConfig {
   gitProvider?: GitHubProviderConfig;
   issueProvider?: IssueProviderConfig;
   runtimeAdapter?: RuntimeAdapter;
+  initCommands?: VerificationCommandConfig[];
   verify?: VerificationCommandConfig[];
   workflow?: SingleTaskWorkflowConfig;
 }
@@ -256,6 +257,7 @@ export interface AppConfig {
   piAuthSourceDir: string;
   publicDir: string;
   publicBaseUrl: string;
+  configFilePath?: string;
   repositories: Record<string, RepositoryConfig>;
   sourceFlow: SourceFlowConfig;
   workflow: SingleTaskWorkflowConfig;

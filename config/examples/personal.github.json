@@ -3,51 +3,135 @@
   "sourceFlow": {
     "readinessLabel": "tasksmith",
     "pollIntervalSeconds": 60,
-    "jiraRepoRouting": { "strategy": "label", "labels": {} }
+    "jiraRepoRouting": {
+      "strategy": "label",
+      "labels": {}
+    }
   },
   "workflow": {
     "type": "single_task_sandcastle",
-    "stages": ["plan", "implement", "deep_review", "fix", "deliver"],
+    "stages": [
+      "plan",
+      "implement",
+      "deep_review",
+      "fix",
+      "deliver"
+    ],
     "maxFixAttempts": 1,
     "deliveryMode": "ready_pr"
   },
   "defaultVerify": [
-    { "name": "workspace-smoke", "command": "node -e \"const fs=require('fs'); if (!fs.existsSync('README.md')) process.exit(1); console.log('workspace smoke ok')\"", "timeoutMs": 30000 }
+    {
+      "name": "workspace-smoke",
+      "command": "node -e \"const fs=require('fs'); if (!fs.existsSync('README.md')) process.exit(1); console.log('workspace smoke ok')\"",
+      "timeoutMs": 30000
+    }
   ],
   "repos": {
     "tasksmith": {
       "displayName": "TaskSmith",
       "gitUrl": "https://github.com/Kaldy14/tasksmith.git",
       "defaultBranch": "main",
-      "gitProvider": { "type": "github", "owner": "Kaldy14", "repo": "tasksmith", "ghConfigDir": "/home/deploy/.config/gh-kaldy14" },
-      "issueProvider": { "type": "github_issues", "labels": ["tasksmith"], "state": "open" },
+      "gitProvider": {
+        "type": "github",
+        "owner": "Kaldy14",
+        "repo": "tasksmith",
+        "ghConfigDir": "/home/deploy/.config/gh-kaldy14"
+      },
+      "issueProvider": {
+        "type": "github_issues",
+        "labels": [
+          "tasksmith"
+        ],
+        "state": "open"
+      },
       "verify": [
-        { "name": "install", "command": "pnpm install --frozen-lockfile", "timeoutMs": 300000 },
-        { "name": "verify", "command": "pnpm verify", "timeoutMs": 600000 }
+        {
+          "name": "verify",
+          "command": "pnpm verify",
+          "timeoutMs": 600000
+        }
+      ],
+      "initCommands": [
+        {
+          "name": "install",
+          "command": "pnpm install --frozen-lockfile",
+          "timeoutMs": 300000
+        }
       ]
     },
     "robodoggo": {
       "displayName": "Robodoggo",
       "gitUrl": "https://github.com/Kaldy14/robodoggo.git",
       "defaultBranch": "main",
-      "gitProvider": { "type": "github", "owner": "Kaldy14", "repo": "robodoggo", "ghConfigDir": "/home/deploy/.config/gh-kaldy14" },
-      "issueProvider": { "type": "github_issues", "labels": ["tasksmith"], "state": "open" },
+      "gitProvider": {
+        "type": "github",
+        "owner": "Kaldy14",
+        "repo": "robodoggo",
+        "ghConfigDir": "/home/deploy/.config/gh-kaldy14"
+      },
+      "issueProvider": {
+        "type": "github_issues",
+        "labels": [
+          "tasksmith"
+        ],
+        "state": "open"
+      },
       "verify": [
-        { "name": "install", "command": "pnpm install --frozen-lockfile", "timeoutMs": 300000 },
-        { "name": "typecheck", "command": "pnpm typecheck", "timeoutMs": 180000 },
-        { "name": "test", "command": "pnpm test", "timeoutMs": 300000 }
+        {
+          "name": "typecheck",
+          "command": "pnpm typecheck",
+          "timeoutMs": 180000
+        },
+        {
+          "name": "test",
+          "command": "pnpm test",
+          "timeoutMs": 300000
+        }
+      ],
+      "initCommands": [
+        {
+          "name": "install",
+          "command": "pnpm install --frozen-lockfile",
+          "timeoutMs": 300000
+        }
       ]
     },
     "clui": {
       "displayName": "CLUI",
       "gitUrl": "https://github.com/Kaldy14/clui.git",
       "defaultBranch": "main",
-      "gitProvider": { "type": "github", "owner": "Kaldy14", "repo": "clui", "ghConfigDir": "/home/deploy/.config/gh-kaldy14" },
-      "issueProvider": { "type": "github_issues", "labels": ["tasksmith"], "state": "open" },
+      "gitProvider": {
+        "type": "github",
+        "owner": "Kaldy14",
+        "repo": "clui",
+        "ghConfigDir": "/home/deploy/.config/gh-kaldy14"
+      },
+      "issueProvider": {
+        "type": "github_issues",
+        "labels": [
+          "tasksmith"
+        ],
+        "state": "open"
+      },
       "verify": [
-        { "name": "install", "command": "pnpm install --frozen-lockfile", "timeoutMs": 300000 },
-        { "name": "typecheck", "command": "pnpm typecheck", "timeoutMs": 180000 },
-        { "name": "test", "command": "pnpm test", "timeoutMs": 300000 }
+        {
+          "name": "typecheck",
+          "command": "pnpm typecheck",
+          "timeoutMs": 180000
+        },
+        {
+          "name": "test",
+          "command": "pnpm test",
+          "timeoutMs": 300000
+        }
+      ],
+      "initCommands": [
+        {
+          "name": "install",
+          "command": "pnpm install --frozen-lockfile",
+          "timeoutMs": 300000
+        }
       ]
     }
   }

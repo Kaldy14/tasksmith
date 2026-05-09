@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import {
   Outlet,
   RouterProvider,
@@ -8,6 +8,7 @@ import {
   useParams,
 } from "@tanstack/react-router";
 import { Anvil } from "@/components/anvil";
+import { ConfigPage } from "@/components/config-page";
 import { ProjectRail } from "@/components/project-rail";
 import { useRuns } from "@/hooks/use-runs";
 import type { ConnectionStatus } from "@/types";
@@ -71,6 +72,14 @@ function RunRoute() {
   return <Anvil runId={runId} onConnectionChange={setConnection} onActivity={refreshRuns} />;
 }
 
+function ConfigRoute() {
+  const { setConnection } = useShellContext();
+  useEffect(() => {
+    setConnection("idle");
+  }, [setConnection]);
+  return <ConfigPage />;
+}
+
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
@@ -83,7 +92,13 @@ const runRoute = createRoute({
   component: RunRoute,
 });
 
-const routeTree = rootRoute.addChildren([indexRoute, runRoute]);
+const configRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/config",
+  component: ConfigRoute,
+});
+
+const routeTree = rootRoute.addChildren([indexRoute, runRoute, configRoute]);
 
 export const router = createRouter({
   routeTree,

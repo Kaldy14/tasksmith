@@ -1,4 +1,4 @@
-import type { ControlKind, CreateRunInput, PublicAppConfig, RunRecord, StoredRunEvent } from "./types";
+import type { ControlKind, CreateRunInput, EditableConfigResponse, PublicAppConfig, RunRecord, StoredRunEvent } from "./types";
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -15,6 +15,17 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 
 export async function getPublicConfig(): Promise<PublicAppConfig> {
   return fetchJson<PublicAppConfig>("/api/config");
+}
+
+export async function getEditableConfig(): Promise<EditableConfigResponse> {
+  return fetchJson<EditableConfigResponse>("/api/admin/config");
+}
+
+export async function saveEditableConfig(config: unknown): Promise<EditableConfigResponse> {
+  return fetchJson<EditableConfigResponse>("/api/admin/config", {
+    method: "PUT",
+    body: JSON.stringify(config),
+  });
 }
 
 export async function listRuns(): Promise<RunRecord[]> {

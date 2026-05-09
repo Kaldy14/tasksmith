@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "@tanstack/react-router";
-import { ChevronDown, ChevronRight, Folder, Plus, Wifi } from "lucide-react";
+import { ChevronDown, ChevronRight, Folder, Plus, Settings, Wifi } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { IntakeForm } from "./intake-form";
 import { cn, formatRelativeTime } from "@/lib/utils";
@@ -143,7 +143,14 @@ export function ProjectRail({ runs, loading, connection, onCreated }: ProjectRai
         </div>
       </ScrollArea>
 
-      <div className="shrink-0 border-t border-border/70 px-3 py-3">
+      <div className="shrink-0 space-y-2 border-t border-border/70 px-3 py-3">
+        <Link
+          to="/config"
+          className="flex h-8 items-center gap-2 rounded-lg bg-accent px-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <Settings className="size-3.5" />
+          Project config
+        </Link>
         <div
           className={cn(
             "flex h-8 items-center gap-2 rounded-lg px-2 text-xs",

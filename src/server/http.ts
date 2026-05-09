@@ -8,6 +8,7 @@ import { parseControlInput, parseCreateRunInput } from "../domain/validation.js"
 import type { FileStore } from "../storage/file-store.js";
 import type { RuntimeManager } from "../runtime/runtime-manager.js";
 import type { SourcePoller } from "../sources/source-poller.js";
+import { readEditableConfig, saveEditableConfig } from "./config.js";
 import { EventHub, sendJson } from "./event-hub.js";
 
 interface ServerDeps {
@@ -60,6 +61,16 @@ async function routeHttp(deps: ServerDeps, req: IncomingMessage, res: ServerResp
       sourceFlow: deps.config.sourceFlow,
       workflow: deps.config.workflow,
     });
+    return;
+  }
+
+  if (method === "GET" && url.pathname === "/api/admin/config") {
+    sendJson(res, 200, await readEditableConfig(deps.config));
+    return;
+  }
+
+  if (method === "PUT" && url.pathname === "/api/admin/config") {
+    sendJson(res, 200, await saveEditableConfig(deps.config, await readJson(req)));
     return;
   }
 
@@ -159,7 +170,7 @@ async function handleSocketMessage(deps: ServerDeps, runId: string, raw: Buffer 
 }
 
 async function serveStatic(config: AppConfig, pathname: string, res: ServerResponse): Promise<void> {
-  const relativePath = pathname === "/" || pathname.startsWith("/runs/") ? "index.html" : pathname.replace(/^\//, "");
+  const relativePath = pathname === "/" || pathname.startsWith("/runs/") || pathname === "/config" ? "index.html" : pathname.replace(/^\//, "");
   const filePath = path.resolve(config.publicDir, relativePath);
   if (!isPathInside(config.publicDir, filePath)) return sendJson(res, 403, { error: "Forbidden" });
   try {
@@ -196,6 +207,7 @@ function publicRepositories(repositories: Readonly<Record<string, RepositoryConf
       gitProvider: repo.gitProvider ? { type: repo.gitProvider.type, owner: repo.gitProvider.owner, repo: repo.gitProvider.repo } : undefined,
       issueProvider: repo.issueProvider ? { type: repo.issueProvider.type } : undefined,
       workflow: repo.workflow ? { deliveryMode: repo.workflow.deliveryMode, maxFixAttempts: repo.workflow.maxFixAttempts } : undefined,
+      initCommandCount: repo.initCommands?.length ?? 0,
       hasVerificationProfile: repo.verify !== undefined,
     }))
     .sort((left, right) => String(left.displayName).localeCompare(String(right.displayName)));

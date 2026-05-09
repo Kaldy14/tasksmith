@@ -32,6 +32,7 @@ pnpm e2e:manual-run
 pnpm e2e:verifier
 pnpm e2e:source-pickup
 pnpm e2e:delivery
+pnpm e2e:config-init
 pnpm e2e:pi-spike
 ```
 
@@ -168,6 +169,7 @@ pnpm e2e:manual-run
 pnpm e2e:verifier
 pnpm e2e:source-pickup
 pnpm e2e:delivery
+pnpm e2e:config-init
 pnpm e2e:pi-spike
 ```
 

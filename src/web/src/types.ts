@@ -70,7 +70,14 @@ export interface RepositorySummary {
   gitProvider?: { type: "github"; owner: string; repo: string };
   issueProvider?: { type: "github_issues" | "jira" };
   workflow?: { deliveryMode: "ready_pr" | "squash_merge_main"; maxFixAttempts: number };
+  initCommandCount: number;
   hasVerificationProfile: boolean;
+}
+
+export interface EditableConfigResponse {
+  path?: string;
+  writable: boolean;
+  config: unknown;
 }
 
 export interface PublicAppConfig {

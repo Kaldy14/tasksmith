@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
@@ -21,9 +22,16 @@ interface ParsedConfigFile {
   workflow?: SingleTaskWorkflowConfig;
 }
 
+export interface EditableConfigResponse {
+  path?: string;
+  writable: boolean;
+  config: unknown;
+}
+
 export function loadConfig(): AppConfig {
   const dataDir = path.resolve(process.env.TASKSMITH_DATA_DIR ?? ".data/tasksmith");
-  const fileConfig = parseConfigFile();
+  const configFilePath = getConfigFilePath();
+  const fileConfig = parseConfigFile(configFilePath);
   return {
     port: parsePort(process.env.PORT ?? "3000"),
     host: process.env.HOST ?? "0.0.0.0",
@@ -33,6 +41,7 @@ export function loadConfig(): AppConfig {
     piAuthSourceDir: path.resolve(process.env.TASKSMITH_PI_AUTH_SOURCE ?? "/run/tasksmith/pi-auth"),
     publicDir: path.join(repoRoot, "src", "server", "public"),
     publicBaseUrl: parsePublicBaseUrl(process.env.TASKSMITH_PUBLIC_URL, process.env.HOST ?? "0.0.0.0", process.env.PORT ?? "3000"),
+    ...(configFilePath ? { configFilePath } : {}),
     repositories: fileConfig?.repos ?? {},
     sourceFlow: fileConfig?.sourceFlow ?? defaultSourceFlow(),
     workflow: fileConfig?.workflow ?? defaultWorkflow(),
@@ -50,11 +59,22 @@ function parseDefaultVerificationCommands(fileDefault: VerificationCommandConfig
   return fileDefault ?? [defaultWorkspaceSmokeCommand()];
 }
 
-function parseConfigFile(): ParsedConfigFile | undefined {
+function parseConfigFile(configFilePath: string | undefined): ParsedConfigFile | undefined {
+  if (!configFilePath) return undefined;
+  const parsed = JSON.parse(readFileSync(configFilePath, "utf8")) as unknown;
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("TaskSmith config file must contain a JSON object");
+  }
+  return parseConfigObject(parsed);
+}
+
+export function getConfigFilePath(): string | undefined {
   const configPath = process.env.TASKSMITH_CONFIG_PATH ?? process.env.TASKSMITH_REPO_CONFIG_PATH;
   if (!configPath?.trim()) return undefined;
-  const absolutePath = path.resolve(configPath);
-  const parsed = JSON.parse(readFileSync(absolutePath, "utf8")) as unknown;
+  return path.resolve(configPath);
+}
+
+export function parseConfigObject(parsed: unknown): ParsedConfigFile {
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     throw new Error("TaskSmith config file must contain a JSON object");
   }
@@ -67,6 +87,40 @@ function parseConfigFile(): ParsedConfigFile | undefined {
     ...(record.defaultVerify === undefined ? {} : { defaultVerify: parseVerificationCommandArray(record.defaultVerify, "defaultVerify") }),
     ...(sourceFlow === undefined ? {} : { sourceFlow }),
     ...(workflow === undefined ? {} : { workflow }),
+  };
+}
+
+export async function readEditableConfig(config: AppConfig): Promise<EditableConfigResponse> {
+  if (!config.configFilePath) {
+    return { writable: false, config: configToEditableObject(config) };
+  }
+  const text = await readFile(config.configFilePath, "utf8");
+  return { path: config.configFilePath, writable: true, config: JSON.parse(text) as unknown };
+}
+
+export async function saveEditableConfig(config: AppConfig, value: unknown): Promise<EditableConfigResponse> {
+  if (!config.configFilePath) throw new Error("TASKSMITH_CONFIG_PATH is required before config can be saved from the UI");
+  const parsed = parseConfigObject(value);
+  await mkdir(path.dirname(config.configFilePath), { recursive: true });
+  await writeFile(config.configFilePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  applyParsedConfig(config, parsed);
+  return { path: config.configFilePath, writable: true, config: value };
+}
+
+function applyParsedConfig(config: AppConfig, parsed: ParsedConfigFile): void {
+  for (const key of Object.keys(config.repositories)) delete config.repositories[key];
+  Object.assign(config.repositories, parsed.repos);
+  config.sourceFlow = parsed.sourceFlow ?? defaultSourceFlow();
+  config.workflow = parsed.workflow ?? defaultWorkflow();
+  config.verification.defaultCommands = parseDefaultVerificationCommands(parsed.defaultVerify);
+}
+
+function configToEditableObject(config: AppConfig): ParsedConfigFile {
+  return {
+    sourceFlow: config.sourceFlow,
+    workflow: config.workflow,
+    defaultVerify: config.verification.defaultCommands,
+    repos: config.repositories,
   };
 }
 
@@ -94,6 +148,7 @@ function parseRepositoryConfig(value: unknown, label: string): RepositoryConfig 
   if (record.gitProvider !== undefined) config.gitProvider = parseGitProvider(record.gitProvider, `${label}.gitProvider`);
   if (record.issueProvider !== undefined) config.issueProvider = parseIssueProvider(record.issueProvider, `${label}.issueProvider`);
   if (record.runtimeAdapter !== undefined) config.runtimeAdapter = parseRuntimeAdapter(record.runtimeAdapter, `${label}.runtimeAdapter`);
+  if (record.initCommands !== undefined) config.initCommands = parseVerificationCommandArray(record.initCommands, `${label}.initCommands`);
   if (record.verify !== undefined) config.verify = parseVerificationCommandArray(record.verify, `${label}.verify`);
   if (record.workflow !== undefined) config.workflow = parseWorkflow(record.workflow, `${label}.workflow`);
   return config;

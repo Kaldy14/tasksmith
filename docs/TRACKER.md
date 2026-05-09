@@ -3,7 +3,7 @@
 ## Current status
 
 **Stage:** Phase 5 — PR delivery foundation  
-**Code status:** Manual Run, verifier, source pickup, and ready-to-review GitHub PR delivery foundations implemented  
+**Code status:** Manual Run, verifier, source pickup, per-repo init commands, config UI, and ready-to-review GitHub PR delivery foundations implemented  
 **Primary next milestone:** add fresh-context review and bounded fix attempts before PR delivery.
 
 TaskSmith currently has durable product/architecture docs, ADRs, research references, and implementation briefs. The next work should be a technical spike, not a full app scaffold.
@@ -178,6 +178,8 @@ TaskSmith, not the agent, runs configured checks after implementation.
 
 - [x] Define repository config format: `TASKSMITH_REPO_CONFIG_PATH` supports `defaultVerify` and per-repo `verify` command profiles.
 - [~] Add repo registry for `vosime-admin`, `core-hub`, future monorepo: config format exists; real repo profiles still need to be authored.
+- [x] Add project config UI backed by `TASKSMITH_CONFIG_PATH`.
+- [x] Add per-repo workspace init commands before implementation runtime starts.
 - [ ] Add verifier command model: name, command, timeout, env policy, artifact policy.
 - [x] Implement verifier runner outside Pi.
 - [x] Capture stdout/stderr and exit codes.

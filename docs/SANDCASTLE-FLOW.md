@@ -80,6 +80,8 @@ Implemented now:
 
 - repository config,
 - configured workspace checkout,
+- per-repo init commands before implementation,
+- project config UI for JSON config edits,
 - deterministic verifier,
 - workflow config parsing/exposure,
 - manual runs against configured repos,
