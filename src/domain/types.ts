@@ -67,6 +67,25 @@ export type IssueProviderConfig =
       repoLabel?: string;
     };
 
+export interface SourceFlowConfig {
+  readinessLabel: string;
+  pollIntervalSeconds: number;
+  jiraRepoRouting: {
+    strategy: "label";
+    labels: Record<string, string>;
+  };
+}
+
+export type DeliveryMode = "draft_pr" | "squash_merge_main";
+
+export interface SingleTaskWorkflowConfig {
+  type: "single_task_sandcastle";
+  stages: ["plan", "implement", "deep_review", "fix", "deliver"];
+  maxFixAttempts: number;
+  deliveryMode: DeliveryMode;
+  mergeTargetBranch?: string;
+}
+
 export interface RepositoryConfig {
   displayName?: string;
   gitUrl?: string;
@@ -76,6 +95,7 @@ export interface RepositoryConfig {
   gitProvider?: GitHubProviderConfig;
   issueProvider?: IssueProviderConfig;
   verify?: VerificationCommandConfig[];
+  workflow?: SingleTaskWorkflowConfig;
 }
 
 export interface VerificationConfig {
@@ -147,6 +167,8 @@ export interface AppConfig {
   piAuthSourceDir: string;
   publicDir: string;
   repositories: Record<string, RepositoryConfig>;
+  sourceFlow: SourceFlowConfig;
+  workflow: SingleTaskWorkflowConfig;
   verification: VerificationConfig;
 }
 

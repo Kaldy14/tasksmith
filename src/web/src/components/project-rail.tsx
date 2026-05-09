@@ -65,12 +65,7 @@ export function ProjectRail({ runs, loading, connection, onCreated }: ProjectRai
 
   return (
     <aside className="flex w-[296px] shrink-0 flex-col border-r border-border bg-card text-foreground">
-      <div className="flex h-14 shrink-0 items-center gap-3 px-4">
-        <div className="flex items-center gap-2" aria-hidden>
-          <span className="size-3 rounded-full bg-[#ff5f57]" />
-          <span className="size-3 rounded-full bg-[#febc2e]" />
-          <span className="size-3 rounded-full bg-[#28c840]" />
-        </div>
+      <div className="flex h-14 shrink-0 items-center px-4">
         <Link to="/" className="min-w-0 truncate text-sm font-semibold tracking-tight text-foreground">
           TaskSmith
         </Link>

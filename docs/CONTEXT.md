@@ -21,7 +21,7 @@ An internal engineering team that wants a controlled autonomous coding workflow:
 Build an internal agent control plane with this lifecycle:
 
 ```txt
-Jira issue marked ai-ready
+Jira/GitHub issue marked tasksmith
   -> TaskSmith claims issue
   -> creates Run
   -> starts isolated Pi session in sandbox/worktree

@@ -45,11 +45,24 @@ export interface RepositorySummary {
   hasGitUrl: boolean;
   gitProvider?: { type: "github"; owner: string; repo: string };
   issueProvider?: { type: "github_issues" | "jira" };
+  workflow?: { deliveryMode: "draft_pr" | "squash_merge_main"; maxFixAttempts: number };
   hasVerificationProfile: boolean;
 }
 
 export interface PublicAppConfig {
   repositories: RepositorySummary[];
+  sourceFlow: {
+    readinessLabel: string;
+    pollIntervalSeconds: number;
+    jiraRepoRouting: { strategy: "label"; labels: Record<string, string> };
+  };
+  workflow: {
+    type: "single_task_sandcastle";
+    stages: ["plan", "implement", "deep_review", "fix", "deliver"];
+    maxFixAttempts: number;
+    deliveryMode: "draft_pr" | "squash_merge_main";
+    mergeTargetBranch?: string;
+  };
 }
 
 export type NormalizedRunEvent =

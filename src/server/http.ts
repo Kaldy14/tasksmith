@@ -53,7 +53,11 @@ async function routeHttp(deps: ServerDeps, req: IncomingMessage, res: ServerResp
   }
 
   if (method === "GET" && url.pathname === "/api/config") {
-    sendJson(res, 200, { repositories: publicRepositories(deps.config.repositories) });
+    sendJson(res, 200, {
+      repositories: publicRepositories(deps.config.repositories),
+      sourceFlow: deps.config.sourceFlow,
+      workflow: deps.config.workflow,
+    });
     return;
   }
 
@@ -174,6 +178,7 @@ function publicRepositories(repositories: Readonly<Record<string, RepositoryConf
       hasGitUrl: Boolean(repo.gitUrl),
       gitProvider: repo.gitProvider ? { type: repo.gitProvider.type, owner: repo.gitProvider.owner, repo: repo.gitProvider.repo } : undefined,
       issueProvider: repo.issueProvider ? { type: repo.issueProvider.type } : undefined,
+      workflow: repo.workflow ? { deliveryMode: repo.workflow.deliveryMode, maxFixAttempts: repo.workflow.maxFixAttempts } : undefined,
       hasVerificationProfile: repo.verify !== undefined,
     }))
     .sort((left, right) => String(left.displayName).localeCompare(String(right.displayName)));

@@ -13,7 +13,7 @@ TaskSmith currently has durable product/architecture docs, ADRs, research refere
 This tracker preserves the desired product flow:
 
 ```txt
-Jira issue marked ai-ready
+Jira/GitHub issue marked tasksmith
   -> TaskSmith claims issue idempotently
   -> TaskSmith creates a Run
   -> Worker creates sandbox/worktree
@@ -207,8 +207,8 @@ A GitHub issue or Jira issue matching configured readiness criteria creates exac
 ### Tasks
 
 - [~] Configure source credentials securely: GitHub CLI profile support is documented; Jira env/secrets still pending.
-- [x] Define repository/source config: per-repo GitHub Issues or Jira metadata, git checkout URL, branch, verification profile.
-- [ ] Define Jira watch config: JQL, repo routing policy, enabled flag, poll interval.
+- [x] Define repository/source config: per-repo GitHub Issues or Jira metadata, git checkout URL, branch, verification profile, and Sandcastle-style workflow.
+- [x] Define Jira watch config shape: `tasksmith` readiness label plus configurable label-to-repo routing.
 - [ ] Implement Jira poller.
 - [ ] Implement `jira_claims` unique claim table.
 - [ ] Add claim/release/reconcile logic.
@@ -220,7 +220,7 @@ A GitHub issue or Jira issue matching configured readiness criteria creates exac
 
 ### Exit gate
 
-- [ ] Jira issue with `ai-ready` creates one Run.
+- [ ] Jira issue with `tasksmith` creates one Run.
 - [ ] Duplicate polling does not duplicate Run.
 - [ ] Jira receives Run link comment.
 - [ ] Jira status/labels reflect claimed/running/failed/pr-created.

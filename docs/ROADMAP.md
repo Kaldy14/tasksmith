@@ -5,7 +5,7 @@ TaskSmith's detailed work tracker lives in [`TRACKER.md`](./TRACKER.md). This fi
 ## North star
 
 ```txt
-Jira issue marked ai-ready
+Jira/GitHub issue marked tasksmith
   -> claim issue
   -> create Run
   -> start native Pi session in isolated workspace
@@ -26,7 +26,7 @@ Jira issue marked ai-ready
 | 1. Pi runtime spike | Next | Prove Pi SDK/RPC control, auth, sessions, and streaming |
 | 2. Manual Run MVP | Not started | Manual prompt -> Pi run -> live UI -> controls -> event replay |
 | 3. Deterministic verifier | Not started | Configured checks/e2e run outside the agent and drive fix attempts |
-| 4. Jira pickup | Not started | `ai-ready` Jira issue creates exactly one Run and receives updates |
+| 4. Source pickup | In progress | `tasksmith` GitHub/Jira issue creates exactly one Run and receives updates |
 | 5. PR creation | Not started | Verified changes become draft PR linked to Jira and Run |
 | 6. Fresh-context review | Not started | Independent diff review blocks or fixes risky changes |
 | 7. CI fixup | Not started | Failed PR CI logs create bounded fix attempts |

@@ -1,5 +1,22 @@
 {
   "description": "Work TaskSmith instance: Jira is the intake source, GitHub uses a separate work account/profile. Copy to the work Hetzner server and set TASKSMITH_CONFIG_PATH.",
+  "sourceFlow": {
+    "readinessLabel": "tasksmith",
+    "pollIntervalSeconds": 60,
+    "jiraRepoRouting": {
+      "strategy": "label",
+      "labels": {
+        "vosime-admin": "vosime-admin",
+        "core-hub": "core-hub"
+      }
+    }
+  },
+  "workflow": {
+    "type": "single_task_sandcastle",
+    "stages": ["plan", "implement", "deep_review", "fix", "deliver"],
+    "maxFixAttempts": 1,
+    "deliveryMode": "draft_pr"
+  },
   "defaultVerify": [
     { "name": "typecheck", "command": "pnpm typecheck", "timeoutMs": 180000 },
     { "name": "lint", "command": "pnpm lint", "timeoutMs": 180000 },
@@ -15,8 +32,8 @@
       "issueProvider": {
         "type": "jira",
         "projectKey": "VOS",
-        "jql": "project = VOS AND labels = ai-ready AND labels = repo:vosime-admin AND status = 'Ready for AI'",
-        "repoLabel": "repo:vosime-admin"
+        "jql": "project = VOS AND labels = tasksmith AND labels = vosime-admin AND status = 'Ready for AI'",
+        "repoLabel": "vosime-admin"
       }
     },
     "core-hub": {
@@ -28,8 +45,8 @@
       "issueProvider": {
         "type": "jira",
         "projectKey": "VOS",
-        "jql": "project = VOS AND labels = ai-ready AND labels = repo:core-hub AND status = 'Ready for AI'",
-        "repoLabel": "repo:core-hub"
+        "jql": "project = VOS AND labels = tasksmith AND labels = core-hub AND status = 'Ready for AI'",
+        "repoLabel": "core-hub"
       }
     }
   }

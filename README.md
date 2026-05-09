@@ -55,6 +55,7 @@ When starting work in this repository, read these files first:
 - [`docs/JIRA-WORKFLOW.md`](./docs/JIRA-WORKFLOW.md) — issue claiming and Jira updates.
 - [`docs/EVENTS-AND-UI.md`](./docs/EVENTS-AND-UI.md) — live event stream, chat, and control model.
 - [`docs/CONFIGURATION.md`](./docs/CONFIGURATION.md) — personal/work instance config, repositories, GitHub Issues/Jira source metadata, verification profiles.
+- [`docs/SANDCASTLE-FLOW.md`](./docs/SANDCASTLE-FLOW.md) — Sandcastle-inspired single-task plan/implement/review/fix/deliver workflow.
 - [`docs/SECURITY.md`](./docs/SECURITY.md) — sandboxing, secrets, threat model.
 - [`docs/ROADMAP.md`](./docs/ROADMAP.md) — short roadmap view.
 - [`docs/TRACKER.md`](./docs/TRACKER.md) — detailed milestone tracker, exit gates, backlog, and current status.

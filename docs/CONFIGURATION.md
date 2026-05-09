@@ -16,6 +16,17 @@ Minimal shape:
 
 ```json
 {
+  "sourceFlow": {
+    "readinessLabel": "tasksmith",
+    "pollIntervalSeconds": 60,
+    "jiraRepoRouting": { "strategy": "label", "labels": { "vosime-admin": "vosime-admin" } }
+  },
+  "workflow": {
+    "type": "single_task_sandcastle",
+    "stages": ["plan", "implement", "deep_review", "fix", "deliver"],
+    "maxFixAttempts": 1,
+    "deliveryMode": "draft_pr"
+  },
   "defaultVerify": [
     { "name": "typecheck", "command": "pnpm typecheck", "timeoutMs": 180000 }
   ],
@@ -25,7 +36,7 @@ Minimal shape:
       "gitUrl": "git@github.com:OWNER/REPO.git",
       "defaultBranch": "main",
       "gitProvider": { "type": "github", "owner": "OWNER", "repo": "REPO" },
-      "issueProvider": { "type": "github_issues", "labels": ["ai-ready"], "state": "open" },
+      "issueProvider": { "type": "github_issues", "labels": ["tasksmith"], "state": "open" },
       "verify": [
         { "name": "test", "command": "pnpm test", "timeoutMs": 300000 }
       ]
@@ -38,7 +49,7 @@ Configured repositories appear in the manual intake UI. When a Run uses a config
 
 ## Personal GitHub instance
 
-Use GitHub Issues as the intake source. Start from:
+Use GitHub Issues as the intake source. The readiness label is `tasksmith`, not `ai-ready`. Start from:
 
 ```txt
 config/examples/personal.github.json
@@ -49,6 +60,8 @@ Current intended repos:
 - `tasksmith` -> `Kaldy14/tasksmith`
 - `robodoggo` -> `Kaldy14/robodoggo`
 - `clui` -> `Kaldy14/clui`
+
+Because GitHub Issues are already scoped to a repository, no extra repo-routing label is needed. The poller should query each configured repo for open issues with label `tasksmith`.
 
 Server setup outline:
 
@@ -74,7 +87,7 @@ GH_CONFIG_DIR=/home/deploy/.config/gh-kaldy14 gh auth setup-git
 GH_CONFIG_DIR=/home/deploy/.config/gh-kaldy14 gh auth status
 ```
 
-Public HTTPS clones do not need auth. Private HTTPS clones, GitHub Issues intake, and future PR creation do. Do not copy `ghConfigDir` auth directories into agent workspaces.
+GitHub CLI login is intentionally manual: it avoids putting GitHub credentials into TaskSmith prompts, config files, or shell history. Public HTTPS clones do not need auth. Private HTTPS clones, GitHub Issues intake, and future PR creation do. Do not copy `ghConfigDir` auth directories into agent workspaces.
 
 ## Work Jira instance
 
@@ -86,11 +99,32 @@ config/examples/work.jira.github.json
 
 In that config:
 
+- `sourceFlow.readinessLabel = "tasksmith"` is the global Jira pickup label.
+- `sourceFlow.jiraRepoRouting.labels` maps Jira labels to TaskSmith repo keys.
 - `issueProvider.type = "jira"` marks the repo for Jira intake.
 - `jql` defines the readiness query for that repo.
 - `repoLabel` documents the expected Jira repo-routing label.
 - `gitProvider.ghConfigDir` points at the work GitHub CLI profile for future PR creation.
 - `gitSshCommand` can force a work-only SSH key for clones.
+
+Example routing:
+
+```json
+{
+  "sourceFlow": {
+    "readinessLabel": "tasksmith",
+    "jiraRepoRouting": {
+      "strategy": "label",
+      "labels": {
+        "vosime-admin": "vosime-admin",
+        "core-hub": "core-hub"
+      }
+    }
+  }
+}
+```
+
+That means a Jira issue with labels `tasksmith` and `vosime-admin` routes to the `vosime-admin` repository. This mapping is per-instance configurable.
 
 For the work server, create a separate GitHub CLI profile and/or SSH key, for example:
 
@@ -101,6 +135,34 @@ GH_CONFIG_DIR=/home/deploy/.config/gh-work gh auth setup-git
 ```
 
 Jira tokens should be environment variables or a secrets manager in a later Jira poller slice, not committed to the config file.
+
+## Sandcastle-inspired single-task workflow
+
+The configured workflow is based on Sandcastle's template flow, adapted to TaskSmith and Pi:
+
+```txt
+plan -> implement -> deep_review -> fix -> deliver
+```
+
+- `plan`: fresh planning pass over the issue and repo context.
+- `implement`: Pi implementation attempt in a per-run workspace/branch.
+- `deep_review`: fresh-context review of the diff.
+- `fix`: bounded fix attempts based on review/verifier findings.
+- `deliver`: either create a draft PR or squash-merge to main, depending on config.
+
+Delivery is configurable:
+
+```json
+{ "workflow": { "deliveryMode": "draft_pr" } }
+```
+
+or:
+
+```json
+{ "workflow": { "deliveryMode": "squash_merge_main", "mergeTargetBranch": "main" } }
+```
+
+MVP policy should default to `draft_pr`. `squash_merge_main` is only appropriate for a trusted personal instance and should remain disabled for work unless explicitly accepted.
 
 ## Verification precedence
 

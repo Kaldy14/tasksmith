@@ -132,7 +132,7 @@ For repo-specific profiles and checkout metadata, set `TASKSMITH_CONFIG_PATH` to
       "gitUrl": "git@github.com:YOUR_ORG/vosime-admin.git",
       "defaultBranch": "main",
       "gitProvider": { "type": "github", "owner": "YOUR_ORG", "repo": "vosime-admin" },
-      "issueProvider": { "type": "jira", "jql": "project = VOS AND labels = ai-ready AND labels = repo:vosime-admin" },
+      "issueProvider": { "type": "jira", "jql": "project = VOS AND labels = tasksmith AND labels = vosime-admin" },
       "verify": [
         { "name": "typecheck", "command": "pnpm typecheck", "timeoutMs": 120000 },
         { "name": "lint", "command": "pnpm lint", "timeoutMs": 120000 }

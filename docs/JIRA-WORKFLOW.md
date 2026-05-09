@@ -11,7 +11,7 @@ TaskSmith polls Jira using configured watches.
 Example JQL:
 
 ```jql
-labels = ai-ready AND status = "Ready for AI"
+labels = tasksmith AND status = "Ready for AI"
 ```
 
 When an issue matches:
@@ -64,7 +64,7 @@ Ready for AI
 Avoid overfitting initially. Labels can be safer than transitions while testing:
 
 ```txt
-ai-ready
+tasksmith
 ai-claimed
 ai-running
 ai-pr-created
@@ -119,24 +119,24 @@ Possible strategies:
 1. Jira component -> repo.
 2. Jira project -> repo.
 3. Jira custom field -> repo.
-4. Label -> repo, e.g. `repo:vosime-admin`.
+4. Label -> repo, e.g. `vosime-admin`.
 5. Manual human selection in TaskSmith UI before run starts.
 6. Agent inference only as a fallback, never as the primary routing mechanism.
 
 Recommended MVP:
 
 ```txt
-labels or custom field determine repo
+labels or custom field determine repo. The label mapping must be configurable per instance.
 ```
 
 Example:
 
 ```txt
-repo:vosime-admin
-repo:core-hub
+vosime-admin
+core-hub
 ```
 
-If no repo is resolved, create Run in `waiting_for_user` and ask human to select.
+For the work instance, one Jira board can route to many repositories using `sourceFlow.jiraRepoRouting.labels`, e.g. `{ "vosime-admin": "vosime-admin", "core-hub": "core-hub" }`. If no repo is resolved, create Run in `waiting_for_user` and ask human to select.
 
 ## Prompt safety
 

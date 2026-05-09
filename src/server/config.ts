@@ -6,6 +6,8 @@ import type {
   GitHubProviderConfig,
   IssueProviderConfig,
   RepositoryConfig,
+  SingleTaskWorkflowConfig,
+  SourceFlowConfig,
   VerificationCommandConfig,
   VerificationConfig,
 } from "../domain/types.js";
@@ -15,6 +17,8 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 interface ParsedConfigFile {
   defaultVerify?: VerificationCommandConfig[];
   repos: Record<string, RepositoryConfig>;
+  sourceFlow?: SourceFlowConfig;
+  workflow?: SingleTaskWorkflowConfig;
 }
 
 export function loadConfig(): AppConfig {
@@ -29,6 +33,8 @@ export function loadConfig(): AppConfig {
     piAuthSourceDir: path.resolve(process.env.TASKSMITH_PI_AUTH_SOURCE ?? "/run/tasksmith/pi-auth"),
     publicDir: path.join(repoRoot, "src", "server", "public"),
     repositories: fileConfig?.repos ?? {},
+    sourceFlow: fileConfig?.sourceFlow ?? defaultSourceFlow(),
+    workflow: fileConfig?.workflow ?? defaultWorkflow(),
     verification: parseVerificationConfig(fileConfig?.defaultVerify),
   };
 }
@@ -53,8 +59,14 @@ function parseConfigFile(): ParsedConfigFile | undefined {
   }
   const record = parsed as Record<string, unknown>;
   const repos = parseRepositoryConfigs(record.repos);
-  if (record.defaultVerify === undefined) return { repos };
-  return { defaultVerify: parseVerificationCommandArray(record.defaultVerify, "defaultVerify"), repos };
+  const sourceFlow = record.sourceFlow === undefined ? undefined : parseSourceFlow(record.sourceFlow, "sourceFlow");
+  const workflow = record.workflow === undefined ? undefined : parseWorkflow(record.workflow, "workflow");
+  return {
+    repos,
+    ...(record.defaultVerify === undefined ? {} : { defaultVerify: parseVerificationCommandArray(record.defaultVerify, "defaultVerify") }),
+    ...(sourceFlow === undefined ? {} : { sourceFlow }),
+    ...(workflow === undefined ? {} : { workflow }),
+  };
 }
 
 function parseRepositoryConfigs(value: unknown): Record<string, RepositoryConfig> {
@@ -81,7 +93,83 @@ function parseRepositoryConfig(value: unknown, label: string): RepositoryConfig 
   if (record.gitProvider !== undefined) config.gitProvider = parseGitProvider(record.gitProvider, `${label}.gitProvider`);
   if (record.issueProvider !== undefined) config.issueProvider = parseIssueProvider(record.issueProvider, `${label}.issueProvider`);
   if (record.verify !== undefined) config.verify = parseVerificationCommandArray(record.verify, `${label}.verify`);
+  if (record.workflow !== undefined) config.workflow = parseWorkflow(record.workflow, `${label}.workflow`);
   return config;
+}
+
+function parseSourceFlow(value: unknown, label: string): SourceFlowConfig {
+  const record = expectRecord(value, label);
+  return {
+    readinessLabel: record.readinessLabel === undefined ? "tasksmith" : parseRequiredString(record.readinessLabel, `${label}.readinessLabel`, 80),
+    pollIntervalSeconds: record.pollIntervalSeconds === undefined ? 60 : parsePollInterval(record.pollIntervalSeconds, `${label}.pollIntervalSeconds`),
+    jiraRepoRouting: parseJiraRepoRouting(record.jiraRepoRouting, `${label}.jiraRepoRouting`),
+  };
+}
+
+function parseJiraRepoRouting(value: unknown, label: string): SourceFlowConfig["jiraRepoRouting"] {
+  if (value === undefined) return { strategy: "label", labels: {} };
+  const record = expectRecord(value, label);
+  const strategy = record.strategy === undefined ? "label" : parseRequiredString(record.strategy, `${label}.strategy`, 40);
+  if (strategy !== "label") throw new Error(`${label}.strategy must be 'label'`);
+  return { strategy: "label", labels: parseLabelRouteMap(record.labels, `${label}.labels`) };
+}
+
+function parseLabelRouteMap(value: unknown, label: string): Record<string, string> {
+  if (value === undefined) return {};
+  const record = expectRecord(value, label);
+  const result: Record<string, string> = {};
+  for (const [jiraLabel, repoKey] of Object.entries(record)) {
+    if (!jiraLabel.trim()) throw new Error(`${label} contains an empty label`);
+    result[jiraLabel] = parseRequiredString(repoKey, `${label}.${jiraLabel}`, 160);
+  }
+  return result;
+}
+
+function parseWorkflow(value: unknown, label: string): SingleTaskWorkflowConfig {
+  const record = expectRecord(value, label);
+  const type = record.type === undefined ? "single_task_sandcastle" : parseRequiredString(record.type, `${label}.type`, 80);
+  if (type !== "single_task_sandcastle") throw new Error(`${label}.type must be 'single_task_sandcastle'`);
+  const workflow: SingleTaskWorkflowConfig = {
+    type: "single_task_sandcastle",
+    stages: parseWorkflowStages(record.stages, `${label}.stages`),
+    maxFixAttempts: record.maxFixAttempts === undefined ? 1 : parseFixAttempts(record.maxFixAttempts, `${label}.maxFixAttempts`),
+    deliveryMode: record.deliveryMode === undefined ? "draft_pr" : parseDeliveryMode(record.deliveryMode, `${label}.deliveryMode`),
+  };
+  assignOptionalString(workflow, "mergeTargetBranch", record.mergeTargetBranch, `${label}.mergeTargetBranch`, 160);
+  return workflow;
+}
+
+function parseWorkflowStages(value: unknown, label: string): SingleTaskWorkflowConfig["stages"] {
+  const defaultStages: SingleTaskWorkflowConfig["stages"] = ["plan", "implement", "deep_review", "fix", "deliver"];
+  if (value === undefined) return defaultStages;
+  if (!Array.isArray(value)) throw new Error(`${label} must be an array`);
+  const expected = defaultStages;
+  if (value.length !== expected.length || value.some((stage, index) => stage !== expected[index])) {
+    throw new Error(`${label} must be exactly ${JSON.stringify(expected)}`);
+  }
+  return defaultStages;
+}
+
+function parseDeliveryMode(value: unknown, label: string): "draft_pr" | "squash_merge_main" {
+  if (value === "draft_pr" || value === "squash_merge_main") return value;
+  throw new Error(`${label} must be 'draft_pr' or 'squash_merge_main'`);
+}
+
+function defaultSourceFlow(): SourceFlowConfig {
+  return {
+    readinessLabel: "tasksmith",
+    pollIntervalSeconds: 60,
+    jiraRepoRouting: { strategy: "label", labels: {} },
+  };
+}
+
+function defaultWorkflow(): SingleTaskWorkflowConfig {
+  return {
+    type: "single_task_sandcastle",
+    stages: ["plan", "implement", "deep_review", "fix", "deliver"],
+    maxFixAttempts: 1,
+    deliveryMode: "draft_pr",
+  };
 }
 
 function parseGitProvider(value: unknown, label: string): GitHubProviderConfig {
@@ -159,6 +247,20 @@ function parseRequiredString(value: unknown, label: string, maxBytes: number): s
 function assignOptionalString<T extends object, K extends keyof T & string>(target: T, key: K, value: unknown, label: string, maxBytes: number): void {
   if (value === undefined) return;
   target[key] = parseRequiredString(value, label, maxBytes) as T[K];
+}
+
+function parsePollInterval(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 5 || value > 86_400) {
+    throw new Error(`${label} must be an integer between 5 and 86400`);
+  }
+  return value;
+}
+
+function parseFixAttempts(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 10) {
+    throw new Error(`${label} must be an integer between 0 and 10`);
+  }
+  return value;
 }
 
 function parseCloneDepth(value: unknown, label: string): number {
