@@ -28,6 +28,7 @@ export function Anvil({ runId, onConnectionChange, onActivity }: AnvilProps) {
   const controlsActive =
     run?.status === "running" ||
     run?.status === "preparing" ||
+    run?.status === "fixing" ||
     run?.status === "waiting_for_control";
 
   return (

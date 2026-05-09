@@ -4,6 +4,7 @@ export type RunStatus =
   | "running"
   | "waiting_for_control"
   | "verifying"
+  | "fixing"
   | "reviewing"
   | "creating_pr"
   | "pr_created"
