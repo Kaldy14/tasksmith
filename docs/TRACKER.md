@@ -24,7 +24,7 @@ Jira/GitHub issue marked tasksmith
   -> Deterministic verifier runs tests/e2e
   -> Failed verifier output creates fix attempt
   -> Fresh-context review checks the diff
-  -> Draft PR is created
+  -> Ready-to-review PR is created
   -> Jira is updated with status, logs, PR link
   -> CI is monitored and fixup attempts are run
 ```
@@ -56,7 +56,7 @@ Jira/GitHub issue marked tasksmith
 | M2 — Manual Run MVP | `[~]` | Create manual Run, run Pi in workspace, stream UI events | Browser shows live Pi work and accepts control messages |
 | M3 — Deterministic verifier | `[~]` | Run configured checks/e2e after agent work | Verification pass/fail drives next Run state |
 | M4 — Jira pickup | `[ ]` | Poll Jira, claim issue, create Run, update Jira | Tagged Jira issue becomes exactly one TaskSmith Run |
-| M5 — PR creation | `[ ]` | Commit/push verified diff and create draft PR | PR links Jira, Run, verification, review summary |
+| M5 — PR creation | `[ ]` | Commit/push verified diff and create ready-to-review PR | PR links Jira, Run, verification, review summary |
 | M6 — Fresh-context review | `[ ]` | Independent review before PR readiness | Findings are structured and can block/fix |
 | M7 — CI fixup | `[ ]` | Watch PR CI and fix failures | Failed CI creates bounded fix attempts |
 | M8 — Hardening | `[ ]` | Security, auth, deployment, observability | Safe enough for internal beta on real repos |
@@ -196,7 +196,7 @@ TaskSmith, not the agent, runs configured checks after implementation.
 
 ## M4 — Source pickup: GitHub Issues and Jira
 
-**Status:** `[~]` Config foundation in progress
+**Status:** `[~]` GitHub Issues and Jira pickup foundation in progress
 **Type:** source integration  
 **Inspired by:** Kandev Jira JQL watches, GitHub Issues for repository-scoped intake, but with external trackers kept as source of truth
 
@@ -209,22 +209,26 @@ A GitHub issue or Jira issue matching configured readiness criteria creates exac
 - [~] Configure source credentials securely: GitHub CLI profile support is documented; Jira env/secrets still pending.
 - [x] Define repository/source config: per-repo GitHub Issues or Jira metadata, git checkout URL, branch, verification profile, and Sandcastle-style workflow.
 - [x] Define Jira watch config shape: `tasksmith` readiness label plus configurable label-to-repo routing.
-- [ ] Implement Jira poller.
-- [ ] Implement `jira_claims` unique claim table.
-- [ ] Add claim/release/reconcile logic.
-- [ ] Add Jira comment templates.
+- [x] Extend Run source model for manual/GitHub issue/Jira source metadata.
+- [x] Add file-backed source claim store with unique claim keys.
+- [x] Implement manual GitHub Issues poller endpoint for configured repos.
+- [x] Add GitHub issue Run-link comment after successful claim.
+- [x] Implement Jira poller with environment-sourced Jira credentials.
+- [x] Add Jira Run-link comment after successful claim.
+- [x] Implement repository routing from Jira labels via `sourceFlow.jiraRepoRouting.labels`.
+- [x] Add source-pickup e2e proving idempotent GitHub and Jira polling.
 - [ ] Add Jira status/label transition config.
-- [ ] Implement repository routing from Jira label/component/custom field.
 - [ ] Handle missing repo route by creating `waiting_for_user` Run.
-- [ ] Add UI for seeing Jira source metadata.
+- [~] Add UI for seeing source metadata and claims: run header links source issue; claims list is API-only.
 
 ### Exit gate
 
-- [ ] Jira issue with `tasksmith` creates one Run.
-- [ ] Duplicate polling does not duplicate Run.
-- [ ] Jira receives Run link comment.
+- [x] Jira issue with `tasksmith` creates one Run in the source-pickup e2e.
+- [x] Duplicate polling does not duplicate Run for GitHub Issues or Jira.
+- [x] GitHub issue receives Run link comment.
+- [x] Jira receives Run link comment in the source-pickup e2e.
 - [ ] Jira status/labels reflect claimed/running/failed/pr-created.
-- [ ] Repo routing works for GitHub Issues repos (`tasksmith`, `robodoggo`, `clui`) and Jira-routed repos (`vosime-admin`, `core-hub`).
+- [~] Repo routing works for GitHub Issues repos by configured repo and for Jira labels in e2e; real `vosime-admin`/`core-hub` auth/config still need validation.
 
 ## M5 — PR creation
 
@@ -234,7 +238,7 @@ A GitHub issue or Jira issue matching configured readiness criteria creates exac
 
 ### Goal
 
-Turn verified changes into a draft PR and link it back to Jira.
+Turn verified changes into a ready-to-review PR and link it back to the source issue.
 
 ### Tasks
 
@@ -246,14 +250,14 @@ Turn verified changes into a draft PR and link it back to Jira.
 - [ ] Create branch from base branch.
 - [ ] Commit changes.
 - [ ] Push branch.
-- [ ] Create draft PR.
+- [ ] Create ready-to-review PR.
 - [ ] Generate PR body with Jira link, Run link, verification summary, review summary.
 - [ ] Store PR metadata.
 - [ ] Update Jira with PR link.
 
 ### Exit gate
 
-- [ ] Verified Run produces draft PR.
+- [ ] Verified Run produces ready-to-review PR.
 - [ ] PR body has enough context for human review.
 - [ ] Jira links to PR and TaskSmith Run.
 - [ ] No auto-merge exists in MVP.

@@ -7,12 +7,14 @@ import type { AppConfig, RepositoryConfig } from "../domain/types.js";
 import { parseControlInput, parseCreateRunInput } from "../domain/validation.js";
 import type { FileStore } from "../storage/file-store.js";
 import type { RuntimeManager } from "../runtime/runtime-manager.js";
+import type { SourcePoller } from "../sources/source-poller.js";
 import { EventHub, sendJson } from "./event-hub.js";
 
 interface ServerDeps {
   config: AppConfig;
   store: FileStore;
   runtime: RuntimeManager;
+  sourcePoller: SourcePoller;
   hub: EventHub;
 }
 
@@ -58,6 +60,16 @@ async function routeHttp(deps: ServerDeps, req: IncomingMessage, res: ServerResp
       sourceFlow: deps.config.sourceFlow,
       workflow: deps.config.workflow,
     });
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/sources/poll") {
+    sendJson(res, 202, await deps.sourcePoller.pollOnce());
+    return;
+  }
+
+  if (method === "GET" && url.pathname === "/api/source-claims") {
+    sendJson(res, 200, { claims: await deps.store.listSourceClaims() });
     return;
   }
 

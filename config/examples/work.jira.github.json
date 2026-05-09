@@ -15,7 +15,7 @@
     "type": "single_task_sandcastle",
     "stages": ["plan", "implement", "deep_review", "fix", "deliver"],
     "maxFixAttempts": 1,
-    "deliveryMode": "draft_pr"
+    "deliveryMode": "ready_pr"
   },
   "defaultVerify": [
     { "name": "typecheck", "command": "pnpm typecheck", "timeoutMs": 180000 },

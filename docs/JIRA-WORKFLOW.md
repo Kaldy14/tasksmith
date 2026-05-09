@@ -17,22 +17,24 @@ labels = tasksmith AND status = "Ready for AI"
 When an issue matches:
 
 ```txt
-1. acquire claim in TaskSmith DB,
-2. transition Jira issue or add ai-claimed label,
-3. create Run,
-4. enqueue Run,
-5. comment on Jira with TaskSmith run URL.
+1. acquire claim in TaskSmith's source claim store,
+2. create Run,
+3. enqueue Run,
+4. comment on Jira with TaskSmith run URL,
+5. later transition Jira issue or add status labels when status-sync policy is implemented.
 ```
 
 ## Idempotency
 
 Duplicate pickup must be impossible under normal operation.
 
-Use a DB table with a unique constraint:
+The current foundation uses a file-backed `source-claims.json` store with unique claim keys. Future database-backed deployments should preserve the same uniqueness invariant:
 
 ```txt
-jira_claims
-- jira_key text unique
+source_claims
+- key text unique              # e.g. jira:VOS-42
+- provider text                # jira/github
+- source_key text
 - run_id uuid
 - status text
 - claimed_at timestamp
@@ -48,7 +50,7 @@ failed
 cancelled
 ```
 
-If Jira transition succeeds but DB insert fails, the poller should detect and reconcile. If DB insert succeeds but Jira update fails, the Run can proceed but should emit a warning and retry Jira update.
+If a tracker transition succeeds but claim insert fails, the poller should detect and reconcile. If claim insert succeeds but tracker update/comment fails, the Run can proceed but should emit a warning and retry tracker update.
 
 ## Jira state sync
 
@@ -101,7 +103,7 @@ Summary:
 ### PR created comment
 
 ```md
-TaskSmith created a draft PR:
+TaskSmith created a ready-to-review PR:
 
 <pr-url>
 
@@ -136,7 +138,7 @@ vosime-admin
 core-hub
 ```
 
-For Jira deployments, one Jira board can route to many repositories using `sourceFlow.jiraRepoRouting.labels`, e.g. `{ "vosime-admin": "vosime-admin", "core-hub": "core-hub" }`. If no repo is resolved, create Run in `waiting_for_user` and ask human to select.
+For Jira deployments, one Jira board can route to many repositories using `sourceFlow.jiraRepoRouting.labels`, e.g. `{ "vosime-admin": "vosime-admin", "core-hub": "core-hub" }`. The current poller honors this mapping and skips a repo if the Jira issue is routed to a different repo. If no repo is resolved, a future slice should create a `waiting_for_user` Run and ask a human to select.
 
 ## Prompt safety
 

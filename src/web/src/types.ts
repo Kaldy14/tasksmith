@@ -11,13 +11,26 @@ export type RunStatus =
 export type RuntimeAdapter = "pi" | "demo";
 export type ControlKind = "prompt" | "steer" | "follow_up";
 
+export type RunSourceType = "manual" | "github_issue" | "jira";
+
+export interface RunSourceSnapshot {
+  type: RunSourceType;
+  key: string;
+  title: string;
+  url?: string;
+  body?: string;
+  labels: string[];
+}
+
 export interface RunRecord {
   id: string;
-  sourceType: "manual";
+  sourceType: RunSourceType;
   title: string;
   prompt: string;
   repoKey: string;
   adapter: RuntimeAdapter;
+  source?: RunSourceSnapshot;
+  claimKey?: string;
   status: RunStatus;
   currentAttemptId: string;
   runDir: string;
@@ -45,7 +58,7 @@ export interface RepositorySummary {
   hasGitUrl: boolean;
   gitProvider?: { type: "github"; owner: string; repo: string };
   issueProvider?: { type: "github_issues" | "jira" };
-  workflow?: { deliveryMode: "draft_pr" | "squash_merge_main"; maxFixAttempts: number };
+  workflow?: { deliveryMode: "ready_pr" | "squash_merge_main"; maxFixAttempts: number };
   hasVerificationProfile: boolean;
 }
 
@@ -60,7 +73,7 @@ export interface PublicAppConfig {
     type: "single_task_sandcastle";
     stages: ["plan", "implement", "deep_review", "fix", "deliver"];
     maxFixAttempts: number;
-    deliveryMode: "draft_pr" | "squash_merge_main";
+    deliveryMode: "ready_pr" | "squash_merge_main";
     mergeTargetBranch?: string;
   };
 }

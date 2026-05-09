@@ -63,7 +63,7 @@ TaskSmith starts bounded fix attempts using review/verifier findings. `maxFixAtt
 Configurable per instance or per repo:
 
 ```json
-{ "deliveryMode": "draft_pr" }
+{ "deliveryMode": "ready_pr" }
 ```
 
 or:
@@ -72,7 +72,7 @@ or:
 { "deliveryMode": "squash_merge_main", "mergeTargetBranch": "main" }
 ```
 
-`draft_pr` is the safe default. `squash_merge_main` is an explicit delivery mode for deployments/repos where direct merge is desired.
+`ready_pr` is the safe default and creates a non-draft, ready-to-review PR. `squash_merge_main` is an explicit delivery mode for deployments/repos where direct merge is desired. Legacy `draft_pr` config values are normalized to `ready_pr` for compatibility.
 
 ## Current implementation status
 
@@ -82,14 +82,15 @@ Implemented now:
 - configured workspace checkout,
 - deterministic verifier,
 - workflow config parsing/exposure,
-- manual runs against configured repos.
+- manual runs against configured repos,
+- GitHub Issues and Jira source polling with idempotent claims.
 
 Still to implement:
 
-- source issue pollers/claims,
+- Jira status/label transitions beyond Run-link comments,
 - branch creation and commit policy,
 - planning pass,
 - fresh-context deep review,
 - bounded fix attempts,
-- draft PR creation,
+- ready-to-review PR creation,
 - optional squash merge to main.

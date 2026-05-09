@@ -32,6 +32,7 @@ export function loadConfig(): AppConfig {
     stateDir: path.join(dataDir, "state"),
     piAuthSourceDir: path.resolve(process.env.TASKSMITH_PI_AUTH_SOURCE ?? "/run/tasksmith/pi-auth"),
     publicDir: path.join(repoRoot, "src", "server", "public"),
+    publicBaseUrl: parsePublicBaseUrl(process.env.TASKSMITH_PUBLIC_URL, process.env.HOST ?? "0.0.0.0", process.env.PORT ?? "3000"),
     repositories: fileConfig?.repos ?? {},
     sourceFlow: fileConfig?.sourceFlow ?? defaultSourceFlow(),
     workflow: fileConfig?.workflow ?? defaultWorkflow(),
@@ -92,6 +93,7 @@ function parseRepositoryConfig(value: unknown, label: string): RepositoryConfig 
   if (record.cloneDepth !== undefined) config.cloneDepth = parseCloneDepth(record.cloneDepth, `${label}.cloneDepth`);
   if (record.gitProvider !== undefined) config.gitProvider = parseGitProvider(record.gitProvider, `${label}.gitProvider`);
   if (record.issueProvider !== undefined) config.issueProvider = parseIssueProvider(record.issueProvider, `${label}.issueProvider`);
+  if (record.runtimeAdapter !== undefined) config.runtimeAdapter = parseRuntimeAdapter(record.runtimeAdapter, `${label}.runtimeAdapter`);
   if (record.verify !== undefined) config.verify = parseVerificationCommandArray(record.verify, `${label}.verify`);
   if (record.workflow !== undefined) config.workflow = parseWorkflow(record.workflow, `${label}.workflow`);
   return config;
@@ -133,7 +135,7 @@ function parseWorkflow(value: unknown, label: string): SingleTaskWorkflowConfig 
     type: "single_task_sandcastle",
     stages: parseWorkflowStages(record.stages, `${label}.stages`),
     maxFixAttempts: record.maxFixAttempts === undefined ? 1 : parseFixAttempts(record.maxFixAttempts, `${label}.maxFixAttempts`),
-    deliveryMode: record.deliveryMode === undefined ? "draft_pr" : parseDeliveryMode(record.deliveryMode, `${label}.deliveryMode`),
+    deliveryMode: record.deliveryMode === undefined ? "ready_pr" : parseDeliveryMode(record.deliveryMode, `${label}.deliveryMode`),
   };
   assignOptionalString(workflow, "mergeTargetBranch", record.mergeTargetBranch, `${label}.mergeTargetBranch`, 160);
   return workflow;
@@ -150,9 +152,10 @@ function parseWorkflowStages(value: unknown, label: string): SingleTaskWorkflowC
   return defaultStages;
 }
 
-function parseDeliveryMode(value: unknown, label: string): "draft_pr" | "squash_merge_main" {
-  if (value === "draft_pr" || value === "squash_merge_main") return value;
-  throw new Error(`${label} must be 'draft_pr' or 'squash_merge_main'`);
+function parseDeliveryMode(value: unknown, label: string): "ready_pr" | "squash_merge_main" {
+  if (value === "ready_pr" || value === "squash_merge_main") return value;
+  if (value === "draft_pr") return "ready_pr";
+  throw new Error(`${label} must be 'ready_pr' or 'squash_merge_main'`);
 }
 
 function defaultSourceFlow(): SourceFlowConfig {
@@ -168,7 +171,7 @@ function defaultWorkflow(): SingleTaskWorkflowConfig {
     type: "single_task_sandcastle",
     stages: ["plan", "implement", "deep_review", "fix", "deliver"],
     maxFixAttempts: 1,
-    deliveryMode: "draft_pr",
+    deliveryMode: "ready_pr",
   };
 }
 
@@ -202,6 +205,11 @@ function parseIssueProvider(value: unknown, label: string): IssueProviderConfig 
     return config;
   }
   throw new Error(`${label}.type must be 'github_issues' or 'jira'`);
+}
+
+function parseRuntimeAdapter(value: unknown, label: string): "pi" | "demo" {
+  if (value === "pi" || value === "demo") return value;
+  throw new Error(`${label} must be 'pi' or 'demo'`);
 }
 
 function parseVerificationCommandArray(value: unknown, label: string): VerificationCommandConfig[] {
@@ -275,6 +283,12 @@ function parseTimeout(value: unknown, label: string): number {
     throw new Error(`${label} must be an integer between 1 and 3600000`);
   }
   return value;
+}
+
+function parsePublicBaseUrl(value: string | undefined, host: string, port: string): string {
+  if (value?.trim()) return value.trim().replace(/\/$/, "");
+  const resolvedHost = host === "0.0.0.0" ? "127.0.0.1" : host;
+  return `http://${resolvedHost}:${port}`;
 }
 
 function parsePort(value: string): number {

@@ -14,13 +14,26 @@ export type RuntimeAdapter = "pi" | "demo";
 
 export type ControlKind = "prompt" | "steer" | "follow_up";
 
+export type RunSourceType = "manual" | "github_issue" | "jira";
+
+export interface RunSourceSnapshot {
+  type: RunSourceType;
+  key: string;
+  title: string;
+  url?: string;
+  body?: string;
+  labels: string[];
+}
+
 export interface RunRecord {
   id: string;
-  sourceType: "manual";
+  sourceType: RunSourceType;
   title: string;
   prompt: string;
   repoKey: string;
   adapter: RuntimeAdapter;
+  source?: RunSourceSnapshot;
+  claimKey?: string;
   status: RunStatus;
   currentAttemptId: string;
   runDir: string;
@@ -39,6 +52,33 @@ export interface CreateRunInput {
   prompt: string;
   repoKey: string;
   adapter: RuntimeAdapter;
+  source?: RunSourceSnapshot;
+  claimKey?: string;
+}
+
+export type SourceClaimStatus = "claimed" | "run_created" | "failed";
+
+export interface SourceClaim {
+  key: string;
+  provider: "github" | "jira";
+  sourceType: Exclude<RunSourceType, "manual">;
+  sourceKey: string;
+  sourceUrl?: string;
+  repoKey: string;
+  runId?: string;
+  status: SourceClaimStatus;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateSourceClaimInput {
+  key: string;
+  provider: SourceClaim["provider"];
+  sourceType: SourceClaim["sourceType"];
+  sourceKey: string;
+  sourceUrl?: string;
+  repoKey: string;
 }
 
 export interface VerificationCommandConfig {
@@ -76,7 +116,7 @@ export interface SourceFlowConfig {
   };
 }
 
-export type DeliveryMode = "draft_pr" | "squash_merge_main";
+export type DeliveryMode = "ready_pr" | "squash_merge_main";
 
 export interface SingleTaskWorkflowConfig {
   type: "single_task_sandcastle";
@@ -94,6 +134,7 @@ export interface RepositoryConfig {
   gitSshCommand?: string;
   gitProvider?: GitHubProviderConfig;
   issueProvider?: IssueProviderConfig;
+  runtimeAdapter?: RuntimeAdapter;
   verify?: VerificationCommandConfig[];
   workflow?: SingleTaskWorkflowConfig;
 }
@@ -166,6 +207,7 @@ export interface AppConfig {
   stateDir: string;
   piAuthSourceDir: string;
   publicDir: string;
+  publicBaseUrl: string;
   repositories: Record<string, RepositoryConfig>;
   sourceFlow: SourceFlowConfig;
   workflow: SingleTaskWorkflowConfig;

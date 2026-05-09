@@ -21,9 +21,9 @@ TaskSmith should be built around **Runs** and **Events**, not around raw agent p
 ## High-level flow
 
 ```txt
-1. Jira issue receives label/status indicating AI readiness.
-2. Jira Poller finds issue via JQL.
-3. Orchestrator acquires idempotent claim.
+1. Jira/GitHub issue receives label/status indicating TaskSmith readiness.
+2. Source poller finds issue via JQL or GitHub Issues label query.
+3. Orchestrator acquires idempotent source claim.
 4. Orchestrator creates Run and enqueues work.
 5. Worker resolves repository and base branch.
 6. Worker creates sandbox/worktree.
@@ -34,7 +34,7 @@ TaskSmith should be built around **Runs** and **Events**, not around raw agent p
 11. Verifier runs deterministic checks.
 12. If checks fail, worker starts a fix attempt with logs.
 13. Reviewer performs fresh-context diff review.
-14. PR Creator opens draft PR.
+14. PR Creator opens ready-to-review PR.
 15. Jira Updater comments/transitions issue.
 ```
 
@@ -77,14 +77,15 @@ Responsibilities:
 - provide admin configuration APIs,
 - write events to event store.
 
-### Jira Poller
+### Source Poller
 
 Responsibilities:
 
-- periodically run configured JQL queries,
+- periodically or manually run configured GitHub Issues and Jira queries,
 - claim issues idempotently,
-- create Runs,
-- transition/comment Jira issues according to configured workflow.
+- create Runs with source snapshots,
+- comment source issues with TaskSmith Run links,
+- later transition/comment Jira issues according to configured workflow.
 
 The poller must not run inside the agent sandbox.
 
@@ -96,7 +97,7 @@ Responsibilities:
 - enqueue attempts,
 - decide when to verify/review/create PR,
 - retry or stop on failures,
-- maintain correspondence between Jira issue, Run, attempts, PR.
+- maintain correspondence between source issue, Run, attempts, PR.
 
 ### Worker
 
@@ -143,7 +144,7 @@ Responsibilities:
 - create branch,
 - commit changes,
 - push branch,
-- create draft PR/MR,
+- create ready-to-review PR/MR,
 - attach verification/review summary.
 
 ### Jira Updater
@@ -201,7 +202,7 @@ skipped
 ### `runs`
 
 - `id`
-- `source_type` — `jira`, `manual`, future `github_issue`
+- `source_type` — `manual`, `github_issue`, `jira`
 - `source_key` — e.g. `VOS-123`
 - `repo_key`
 - `base_branch`
@@ -210,13 +211,16 @@ skipped
 - `created_at`
 - `updated_at`
 
-### `jira_claims`
+### `source_claims`
 
-- `jira_key`
+- `key` — e.g. `github:OWNER/REPO#42` or `jira:VOS-123`
+- `provider`
+- `source_key`
+- `repo_key`
 - `run_id`
 - `claim_status`
 - `claimed_at`
-- unique `jira_key`
+- unique `key`
 
 ### `attempts`
 

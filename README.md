@@ -65,14 +65,17 @@ When starting work in this repository, read these files first:
 
 ## Current status
 
-Phase 2 manual Run MVP has started. The repository includes:
+Manual Run, deterministic verification, and GitHub/Jira source-pickup foundations are implemented. The repository includes:
 
 - a standalone Pi SDK runtime spike harness,
 - a Node/TypeScript API server,
 - a browser UI for manual Runs,
 - persistent event JSONL replay,
 - WebSocket live event streaming,
-- browser controls for steer/follow-up/abort.
+- browser controls for steer/follow-up/abort,
+- configured repository/source metadata,
+- a GitHub Issues/Jira poll endpoint with file-backed idempotent claims,
+- deterministic verifier events and redacted logs.
 
 See:
 
@@ -87,6 +90,7 @@ pnpm typecheck:web
 pnpm build
 pnpm e2e:manual-run
 pnpm e2e:verifier
+pnpm e2e:source-pickup
 pnpm e2e:pi-spike
 TASKSMITH_REAL_PI_E2E=1 pnpm e2e:pi-spike
 ```

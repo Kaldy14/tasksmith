@@ -9,7 +9,7 @@
     "type": "single_task_sandcastle",
     "stages": ["plan", "implement", "deep_review", "fix", "deliver"],
     "maxFixAttempts": 1,
-    "deliveryMode": "draft_pr"
+    "deliveryMode": "ready_pr"
   },
   "defaultVerify": [
     { "name": "workspace-smoke", "command": "node -e \"const fs=require('fs'); if (!fs.existsSync('README.md')) process.exit(1); console.log('workspace smoke ok')\"", "timeoutMs": 30000 }

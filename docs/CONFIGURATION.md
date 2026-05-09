@@ -25,7 +25,7 @@ Minimal shape:
     "type": "single_task_sandcastle",
     "stages": ["plan", "implement", "deep_review", "fix", "deliver"],
     "maxFixAttempts": 1,
-    "deliveryMode": "draft_pr"
+    "deliveryMode": "ready_pr"
   },
   "defaultVerify": [
     { "name": "typecheck", "command": "pnpm typecheck", "timeoutMs": 180000 }
@@ -37,6 +37,7 @@ Minimal shape:
       "defaultBranch": "main",
       "gitProvider": { "type": "github", "owner": "OWNER", "repo": "REPO" },
       "issueProvider": { "type": "github_issues", "labels": ["tasksmith"], "state": "open" },
+      "runtimeAdapter": "pi",
       "verify": [
         { "name": "test", "command": "pnpm test", "timeoutMs": 300000 }
       ]
@@ -45,7 +46,7 @@ Minimal shape:
 }
 ```
 
-Configured repositories appear in the manual intake UI. When a Run uses a configured repository with `gitUrl`, TaskSmith clones it into the per-run workspace before starting Pi or the demo runtime.
+Configured repositories appear in the manual intake UI. When a Run uses a configured repository with `gitUrl`, TaskSmith clones it into the per-run workspace before starting Pi or the demo runtime. Source-created Runs default to `runtimeAdapter: "pi"`; tests and local demos may set `runtimeAdapter: "demo"` on a repository.
 
 ## GitHub Issues source example
 
@@ -61,7 +62,23 @@ Current intended repos:
 - `robodoggo` -> `Kaldy14/robodoggo`
 - `clui` -> `Kaldy14/clui`
 
-Because GitHub Issues are already scoped to a repository, no extra repo-routing label is needed. The poller should query each configured repo for open issues with label `tasksmith`.
+Because GitHub Issues are already scoped to a repository, no extra repo-routing label is needed. The source poller queries each configured repo for open issues with label `tasksmith`, creates exactly one claim/run per issue, and comments back with the TaskSmith Run link.
+
+Manual source poll endpoint:
+
+```bash
+curl -X POST http://127.0.0.1:3000/api/sources/poll
+curl http://127.0.0.1:3000/api/source-claims
+```
+
+Automatic polling is opt-in for now:
+
+```txt
+Environment=TASKSMITH_SOURCE_POLLING=1
+Environment=TASKSMITH_PUBLIC_URL=https://tasksmith.tail1a218f.ts.net
+```
+
+`TASKSMITH_PUBLIC_URL` is used in source issue comments. If it is omitted, TaskSmith builds a local URL from `HOST`/`PORT`.
 
 Server setup outline:
 
@@ -134,7 +151,15 @@ GH_CONFIG_DIR=/home/deploy/.config/gh-work gh auth login -h github.com -p https 
 GH_CONFIG_DIR=/home/deploy/.config/gh-work gh auth setup-git
 ```
 
-Jira tokens should be environment variables or a secrets manager in a later Jira poller slice, not committed to the config file.
+Jira credentials are read from environment variables and must not be committed to config:
+
+```txt
+TASKSMITH_JIRA_BASE_URL=https://your-site.atlassian.net
+TASKSMITH_JIRA_EMAIL=deploy@example.com
+TASKSMITH_JIRA_API_TOKEN=<token-from-secret-store>
+```
+
+The Jira poller uses each repo's configured `issueProvider.jql` when present. If `jql` is omitted, it builds a simple readiness-label query from `projectKey`, `sourceFlow.readinessLabel`, and `repoLabel`. Claim keys are `jira:<ISSUEKEY>`, so duplicate polling or overlapping repo queries do not create duplicate Runs.
 
 ## Sandcastle-inspired single-task workflow
 
@@ -148,12 +173,12 @@ plan -> implement -> deep_review -> fix -> deliver
 - `implement`: Pi implementation attempt in a per-run workspace/branch.
 - `deep_review`: fresh-context review of the diff.
 - `fix`: bounded fix attempts based on review/verifier findings.
-- `deliver`: either create a draft PR or squash-merge to main, depending on config.
+- `deliver`: either create a ready-to-review PR or squash-merge to main, depending on config.
 
 Delivery is configurable:
 
 ```json
-{ "workflow": { "deliveryMode": "draft_pr" } }
+{ "workflow": { "deliveryMode": "ready_pr" } }
 ```
 
 or:
@@ -162,7 +187,7 @@ or:
 { "workflow": { "deliveryMode": "squash_merge_main", "mergeTargetBranch": "main" } }
 ```
 
-`draft_pr` is the safe default. `squash_merge_main` is an explicit delivery mode for deployments/repos where direct merge is desired.
+`ready_pr` is the safe default and creates a non-draft, ready-to-review PR. `squash_merge_main` is an explicit delivery mode for deployments/repos where direct merge is desired. Older configs containing `draft_pr` are accepted as a compatibility alias for `ready_pr`; update them when touched.
 
 ## Verification precedence
 

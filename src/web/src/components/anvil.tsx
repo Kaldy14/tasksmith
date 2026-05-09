@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Folder, PanelRight, Power, RefreshCw, SquareTerminal } from "lucide-react";
+import { ExternalLink, Folder, PanelRight, Power, RefreshCw, SquareTerminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ControlBar } from "./control-bar";
 import { EventStream } from "./event-stream";
@@ -42,6 +42,23 @@ export function Anvil({ runId, onConnectionChange, onActivity }: AnvilProps) {
               <span className="hidden rounded-md border border-border bg-accent px-2 py-0.5 text-[11px] font-medium text-muted-foreground sm:inline-flex">
                 {run.repoKey}
               </span>
+              {run.source ? (
+                run.source.url ? (
+                  <a
+                    href={run.source.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="hidden max-w-[190px] items-center gap-1 truncate rounded-md border border-border bg-card px-2 py-0.5 text-[11px] font-medium text-muted-foreground hover:text-foreground md:inline-flex"
+                  >
+                    <span className="truncate">{sourceLabel(run.sourceType, run.source.key)}</span>
+                    <ExternalLink className="size-3 shrink-0" />
+                  </a>
+                ) : (
+                  <span className="hidden max-w-[190px] truncate rounded-md border border-border bg-card px-2 py-0.5 text-[11px] font-medium text-muted-foreground md:inline-flex">
+                    {sourceLabel(run.sourceType, run.source.key)}
+                  </span>
+                )
+              ) : null}
               <StatusPill status={run.status} className="hidden lg:inline-flex" />
               <span className="hidden text-[11px] text-muted-foreground/55 xl:inline">
                 {shortId(run.id)} · {formatRelativeTime(run.updatedAt)}
@@ -115,6 +132,12 @@ export function Anvil({ runId, onConnectionChange, onActivity }: AnvilProps) {
       </div>
     </section>
   );
+}
+
+function sourceLabel(sourceType: string, key: string): string {
+  if (sourceType === "github_issue") return `GitHub ${key}`;
+  if (sourceType === "jira") return `Jira ${key}`;
+  return key;
 }
 
 function EmptyAnvil() {

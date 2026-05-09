@@ -30,6 +30,7 @@ pnpm typecheck:web
 pnpm build
 pnpm e2e:manual-run
 pnpm e2e:verifier
+pnpm e2e:source-pickup
 pnpm e2e:pi-spike
 ```
 
@@ -43,8 +44,11 @@ HOST=127.0.0.1 PORT=3000 TASKSMITH_DATA_DIR=.data/tasksmith pnpm start
 
 ```txt
 GET  /healthz
+GET  /api/config
 GET  /api/runs
 POST /api/runs
+POST /api/sources/poll
+GET  /api/source-claims
 GET  /api/runs/:id
 GET  /api/runs/:id/events?after=<sequence>
 POST /api/runs/:id/messages
@@ -160,6 +164,7 @@ pnpm typecheck:web
 pnpm build
 pnpm e2e:manual-run
 pnpm e2e:verifier
+pnpm e2e:source-pickup
 pnpm e2e:pi-spike
 ```
 

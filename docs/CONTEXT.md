@@ -29,7 +29,7 @@ Jira/GitHub issue marked tasksmith
   -> allows human steering/follow-up/abort
   -> runs deterministic verification
   -> launches independent review
-  -> creates draft PR
+  -> creates ready-to-review PR
   -> updates Jira with status, logs, and PR link
 ```
 

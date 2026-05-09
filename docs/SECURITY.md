@@ -108,7 +108,7 @@ The system prompt should explicitly say:
 
 MVP PR policy:
 
-- create draft PR only,
+- create ready-to-review PR only,
 - never auto-merge,
 - include verification summary,
 - include AI-generated marker,
@@ -119,7 +119,7 @@ MVP PR policy:
 
 For every Run, retain:
 
-- source Jira issue key and snapshot,
+- source issue key and snapshot,
 - initial prompt sent to Pi,
 - raw Pi events where safe,
 - normalized events,

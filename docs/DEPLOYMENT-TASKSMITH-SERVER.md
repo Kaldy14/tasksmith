@@ -79,6 +79,12 @@ TaskSmith is configured with:
 ```txt
 TASKSMITH_PI_AUTH_SOURCE=/home/deploy/.pi/agent
 TASKSMITH_CONFIG_PATH=/opt/tasksmith/config/repos.json
+TASKSMITH_PUBLIC_URL=https://tasksmith.tail1a218f.ts.net
+# Optional after GitHub/Jira auth is ready:
+# TASKSMITH_SOURCE_POLLING=1
+# TASKSMITH_JIRA_BASE_URL=https://your-site.atlassian.net
+# TASKSMITH_JIRA_EMAIL=deploy@example.com
+# TASKSMITH_JIRA_API_TOKEN=<token-from-secret-store>
 ```
 
 For each Run, TaskSmith copies only narrow Pi auth/config material into the per-run directory. It must not mount or copy the full deploy home directory.
@@ -108,6 +114,7 @@ pnpm typecheck:web
 pnpm build                  # produces src/server/public/{index.html,assets/*}
 pnpm e2e:manual-run
 pnpm e2e:verifier
+pnpm e2e:source-pickup
 pnpm e2e:pi-spike
 sudo systemctl restart tasksmith
 curl -fsS http://127.0.0.1:3000/healthz

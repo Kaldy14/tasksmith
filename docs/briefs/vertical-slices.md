@@ -94,13 +94,13 @@ Jira issue matching JQL creates a TaskSmith Run exactly once.
 
 ### Behavior delivered
 
-Verified changes are committed, pushed, and opened as draft PR.
+Verified changes are committed, pushed, and opened as a ready-to-review PR.
 
 ### Acceptance criteria
 
 - [ ] Branch is created with safe name.
 - [ ] Commit author configured.
-- [ ] Draft PR is created.
+- [ ] Ready-to-review PR is created.
 - [ ] PR body contains Run/Jira/verification links.
 - [ ] Jira receives PR link.
 

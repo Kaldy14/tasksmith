@@ -11,11 +11,12 @@
     "dev:web": "vite --config src/web/vite.config.ts",
     "build:web": "vite build --config src/web/vite.config.ts",
     "build": "pnpm build:web",
-    "verify": "pnpm typecheck && pnpm typecheck:web && pnpm build && pnpm e2e:manual-run && pnpm e2e:verifier && pnpm e2e:pi-spike",
+    "verify": "pnpm typecheck && pnpm typecheck:web && pnpm build && pnpm e2e:manual-run && pnpm e2e:verifier && pnpm e2e:source-pickup && pnpm e2e:pi-spike",
     "pi:spike": "tsx scripts/pi-runtime-spike.ts",
     "e2e:pi-spike": "tsx scripts/e2e-pi-runtime-spike.ts",
     "e2e:manual-run": "tsx scripts/e2e-manual-run-api.ts",
-    "e2e:verifier": "tsx scripts/e2e-verifier.ts"
+    "e2e:verifier": "tsx scripts/e2e-verifier.ts",
+    "e2e:source-pickup": "tsx scripts/e2e-source-pickup.ts"
   },
   "dependencies": {
     "@mariozechner/pi-agent-core": "0.73.0",

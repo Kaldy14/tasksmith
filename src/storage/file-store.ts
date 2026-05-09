@@ -2,7 +2,7 @@ import { constants as fsConstants } from "node:fs";
 import { access, appendFile, cp, mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import type { AppConfig, CreateRunInput, NormalizedRunEvent, RunPaths, RunRecord, RunStatus, StoredRunEvent } from "../domain/types.js";
+import type { AppConfig, CreateRunInput, CreateSourceClaimInput, NormalizedRunEvent, RunPaths, RunRecord, RunStatus, SourceClaim, StoredRunEvent } from "../domain/types.js";
 import { redactForStorage } from "../domain/redaction.js";
 
 interface RunsStateFile {
@@ -10,12 +10,19 @@ interface RunsStateFile {
   runs: RunRecord[];
 }
 
+interface ClaimsStateFile {
+  version: 1;
+  claims: SourceClaim[];
+}
+
 export class FileStore {
   private readonly runsStatePath: string;
+  private readonly claimsStatePath: string;
   private readonly writeQueues = new Map<string, Promise<void>>();
 
   constructor(private readonly config: AppConfig) {
     this.runsStatePath = path.join(config.stateDir, "runs.json");
+    this.claimsStatePath = path.join(config.stateDir, "source-claims.json");
   }
 
   async init(): Promise<void> {
@@ -23,6 +30,9 @@ export class FileStore {
     await mkdir(this.config.stateDir, { recursive: true });
     if (!(await exists(this.runsStatePath))) {
       await this.writeRunsState({ version: 1, runs: [] });
+    }
+    if (!(await exists(this.claimsStatePath))) {
+      await this.writeClaimsState({ version: 1, claims: [] });
     }
   }
 
@@ -58,11 +68,13 @@ export class FileStore {
     const now = new Date().toISOString();
     const run: RunRecord = {
       id,
-      sourceType: "manual",
+      sourceType: input.source?.type ?? "manual",
       title: input.title,
       prompt: input.prompt,
       repoKey: input.repoKey,
       adapter: input.adapter,
+      ...(input.source ? { source: input.source } : {}),
+      ...(input.claimKey ? { claimKey: input.claimKey } : {}),
       status: "queued",
       currentAttemptId: "attempt-1",
       runDir: paths.runDir,
@@ -78,6 +90,48 @@ export class FileStore {
   async listRuns(): Promise<RunRecord[]> {
     const state = await this.readRunsState();
     return [...state.runs].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }
+
+  async listSourceClaims(): Promise<SourceClaim[]> {
+    const state = await this.readClaimsState();
+    return [...state.claims].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }
+
+  async tryCreateSourceClaim(input: CreateSourceClaimInput): Promise<{ claim: SourceClaim; created: boolean }> {
+    return this.enqueue("__claims__", async () => {
+      const state = await this.readClaimsState();
+      const existing = state.claims.find((claim) => claim.key === input.key);
+      if (existing) return { claim: existing, created: false };
+      const now = new Date().toISOString();
+      const claim: SourceClaim = {
+        key: input.key,
+        provider: input.provider,
+        sourceType: input.sourceType,
+        sourceKey: input.sourceKey,
+        ...(input.sourceUrl ? { sourceUrl: input.sourceUrl } : {}),
+        repoKey: input.repoKey,
+        status: "claimed",
+        createdAt: now,
+        updatedAt: now,
+      };
+      await this.writeClaimsState({ version: 1, claims: [claim, ...state.claims] });
+      return { claim, created: true };
+    });
+  }
+
+  async updateSourceClaim(claimKey: string, patch: Partial<Omit<SourceClaim, "key" | "createdAt">>): Promise<SourceClaim> {
+    let updated: SourceClaim | undefined;
+    await this.enqueue("__claims__", async () => {
+      const state = await this.readClaimsState();
+      const claims = state.claims.map((claim) => {
+        if (claim.key !== claimKey) return claim;
+        updated = { ...claim, ...patch, updatedAt: new Date().toISOString() };
+        return updated;
+      });
+      await this.writeClaimsState({ version: 1, claims });
+    });
+    if (!updated) throw new Error(`Source claim not found: ${claimKey}`);
+    return updated;
   }
 
   async getRun(runId: string): Promise<RunRecord | undefined> {
@@ -194,11 +248,23 @@ export class FileStore {
     return JSON.parse(text) as RunsStateFile;
   }
 
+  private async readClaimsState(): Promise<ClaimsStateFile> {
+    const text = await readFile(this.claimsStatePath, "utf8");
+    return JSON.parse(text) as ClaimsStateFile;
+  }
+
   private async writeRunsState(state: RunsStateFile): Promise<void> {
     await mkdir(path.dirname(this.runsStatePath), { recursive: true });
     const tmp = `${this.runsStatePath}.tmp`;
     await writeFile(tmp, `${JSON.stringify(state, null, 2)}\n`, "utf8");
     await rename(tmp, this.runsStatePath);
+  }
+
+  private async writeClaimsState(state: ClaimsStateFile): Promise<void> {
+    await mkdir(path.dirname(this.claimsStatePath), { recursive: true });
+    const tmp = `${this.claimsStatePath}.tmp`;
+    await writeFile(tmp, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+    await rename(tmp, this.claimsStatePath);
   }
 
   private async mutateRuns(mutator: (runs: RunRecord[]) => RunRecord[]): Promise<void> {
