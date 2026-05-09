@@ -19,7 +19,7 @@ interface ProjectGroup {
   liveCount: number;
 }
 
-const ACTIVE: RunStatus[] = ["running", "preparing", "waiting_for_control", "verifying", "reviewing", "creating_pr"];
+const ACTIVE: RunStatus[] = ["running", "preparing", "waiting_for_control", "verifying", "fixing", "reviewing", "creating_pr"];
 
 const CONNECTION_LABEL: Record<ConnectionStatus, string> = {
   idle: "idle",
@@ -168,7 +168,7 @@ export function ProjectRail({ runs, loading, connection, onCreated }: ProjectRai
 }
 
 function statusDotClass(status: RunStatus): string {
-  if (status === "running" || status === "preparing" || status === "verifying" || status === "reviewing" || status === "creating_pr") return "bg-primary";
+  if (status === "running" || status === "preparing" || status === "verifying" || status === "fixing" || status === "reviewing" || status === "creating_pr") return "bg-primary";
   if (status === "waiting_for_control") return "bg-heat";
   if (status === "completed" || status === "pr_created") return "bg-jade";
   if (status === "failed" || status === "cancelled") return "bg-destructive";

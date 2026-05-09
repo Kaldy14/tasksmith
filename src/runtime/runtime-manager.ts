@@ -1,4 +1,4 @@
-import type { ControlKind, NormalizedRunEvent, RepositoryConfig, ReviewRecord, RunPaths, RunRecord, RuntimeHandle, StoredRunEvent } from "../domain/types.js";
+import type { ControlKind, NormalizedRunEvent, RepositoryConfig, ReviewRecord, RunPaths, RunRecord, RuntimeHandle, SingleTaskWorkflowConfig, StoredRunEvent } from "../domain/types.js";
 import type { FileStore } from "../storage/file-store.js";
 import type { EventHub } from "../server/event-hub.js";
 import type { PullRequestDelivery } from "../delivery/pull-request-delivery.js";
@@ -20,7 +20,8 @@ export class RuntimeManager {
     private readonly verifier: DeterministicVerifier,
     private readonly reviewer: FreshContextReviewer,
     private readonly delivery: PullRequestDelivery,
-    repositories: Readonly<Record<string, RepositoryConfig>>,
+    private readonly repositories: Readonly<Record<string, RepositoryConfig>>,
+    private readonly globalWorkflow: SingleTaskWorkflowConfig,
   ) {
     this.workspacePreparer = new WorkspacePreparer(repositories);
   }
@@ -30,7 +31,7 @@ export class RuntimeManager {
     const paths = this.store.pathsForRun(run.id);
     await this.store.updateRun(run.id, { status: "preparing", startedAt: new Date().toISOString() });
     await this.emit(run.id, { type: "run_status", status: "preparing", detail: `Preparing ${run.adapter} runtime` });
-    void this.runAttempt(run, paths, sink);
+    void this.runAttempt(run, paths, sink, { prepareWorkspace: true });
   }
 
   async sendControl(runId: string, kind: ControlKind, message: string): Promise<void> {
@@ -72,22 +73,24 @@ export class RuntimeManager {
     await runtime.abortBash();
   }
 
-  private async runAttempt(run: RunRecord, paths: RunPaths, sink: RuntimeSink): Promise<void> {
+  private async runAttempt(run: RunRecord, paths: RunPaths, sink: RuntimeSink, options: { prepareWorkspace: boolean }): Promise<void> {
     let runtime: StartableRuntime | undefined;
     try {
-      await this.workspacePreparer.prepare(run, paths, async (event) => {
-        await this.emit(run.id, event);
-      });
+      if (options.prepareWorkspace) {
+        await this.workspacePreparer.prepare(run, paths, async (event) => {
+          await this.emit(run.id, event);
+        });
+      }
       const latest = await this.requireRun(run.id);
       if (latest.status === "cancelled") return;
-      runtime = run.adapter === "demo" ? new DemoRuntime(latest, sink, paths) : new PiRuntime(latest, paths, this.store, sink);
+      runtime = latest.adapter === "demo" ? new DemoRuntime(latest, sink, paths) : new PiRuntime(latest, paths, this.store, sink);
       this.active.set(run.id, runtime);
-      await this.emit(run.id, { type: "run_status", status: "preparing", detail: `Starting ${run.adapter} runtime` });
+      await this.emit(run.id, { type: "run_status", status: latest.status === "fixing" ? "fixing" : "preparing", detail: `Starting ${latest.adapter} runtime` });
       await runtime.start();
     } catch (error: unknown) {
       await sink.setFailed(error instanceof Error ? error.message : String(error));
     } finally {
-      this.active.delete(run.id);
+      if (this.active.get(run.id) === runtime) this.active.delete(run.id);
       await runtime?.dispose();
     }
   }
@@ -125,6 +128,7 @@ export class RuntimeManager {
     });
 
     if (result.status === "failed") {
+      if (await this.startFixAttemptIfAllowed(run, result.summary)) return;
       await this.store.updateRun(runId, { status: "failed", error: `Verification failed: ${result.summary}`, finishedAt: new Date().toISOString() });
       await this.emit(runId, { type: "error", message: "Verification failed", detail: result.summary });
       await this.emit(runId, { type: "run_status", status: "failed", detail: result.summary });
@@ -132,6 +136,32 @@ export class RuntimeManager {
     }
 
     await this.reviewVerifiedRun(runId, result.summary);
+  }
+
+  private async startFixAttemptIfAllowed(run: RunRecord, verifierSummary: string): Promise<boolean> {
+    const currentAttempt = parseAttemptNumber(run.currentAttemptId);
+    const completedFixAttempts = Math.max(0, currentAttempt - 1);
+    const maxFixAttempts = this.workflowForRun(run).maxFixAttempts;
+    if (completedFixAttempts >= maxFixAttempts) return false;
+
+    const nextAttempt = currentAttempt + 1;
+    const fixPrompt = `Deterministic verification failed: ${verifierSummary}\n\nStart fix attempt ${completedFixAttempts + 1} of ${maxFixAttempts}. Make the smallest fix only, then stop. Do not create a pull request.`;
+    const updated = await this.store.updateRun(run.id, {
+      status: "fixing",
+      currentAttemptId: `attempt-${nextAttempt}`,
+      prompt: `${run.prompt}\n\nTaskSmith verifier fix request:\n${fixPrompt}`,
+    });
+    await this.emit(run.id, { type: "error", message: "Verification failed; starting bounded fix attempt", detail: verifierSummary });
+    await this.emit(run.id, { type: "run_status", status: "fixing", detail: `Fix attempt ${completedFixAttempts + 1} of ${maxFixAttempts}: ${verifierSummary}` });
+    await this.emit(run.id, { type: "user_message", control: "follow_up", text: fixPrompt, delivery: "forwarded" });
+    setTimeout(() => {
+      void this.runAttempt(updated, this.store.pathsForRun(run.id), this.createSink(updated), { prepareWorkspace: false });
+    }, 0).unref();
+    return true;
+  }
+
+  private workflowForRun(run: RunRecord): SingleTaskWorkflowConfig {
+    return this.repositories[run.repoKey]?.workflow ?? this.globalWorkflow;
   }
 
   private async reviewVerifiedRun(runId: string, verificationSummary: string): Promise<void> {
@@ -190,4 +220,10 @@ export class RuntimeManager {
     if (!run) throw new Error(`Run not found: ${runId}`);
     return run;
   }
+}
+
+function parseAttemptNumber(attemptId: string): number {
+  const match = /^attempt-(\d+)$/.exec(attemptId);
+  if (!match) return 1;
+  return Number.parseInt(match[1] ?? "1", 10);
 }

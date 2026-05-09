@@ -3,8 +3,8 @@
 ## Current status
 
 **Stage:** Phase 6 — Fresh-context review foundation  
-**Code status:** Manual Run, verifier, source pickup, per-repo init commands, config UI, fresh-context review, and ready-to-review GitHub PR delivery foundations implemented  
-**Primary next milestone:** add bounded fix attempts from verifier/review findings, then CI fixup.
+**Code status:** Manual Run, verifier, bounded verifier fix attempts, source pickup, per-repo init commands, config UI, fresh-context review, and ready-to-review GitHub PR delivery foundations implemented  
+**Primary next milestone:** extend bounded fix attempts to review findings, then CI fixup.
 
 TaskSmith currently has durable product/architecture docs, ADRs, research references, and implementation briefs. The next work should be a technical spike, not a full app scaffold.
 
@@ -185,15 +185,15 @@ TaskSmith, not the agent, runs configured checks after implementation.
 - [x] Capture stdout/stderr and exit codes.
 - [x] Store verification results and redacted logs.
 - [~] Display verifier results in the event stream; dedicated verifier panel still pending.
-- [ ] Feed failed verifier summary into a bounded fix attempt.
-- [ ] Add max fix attempt policy.
+- [x] Feed failed verifier summary into a bounded fix attempt.
+- [x] Add max fix attempt policy.
 - [ ] Support e2e artifacts: screenshots, traces, videos where available.
 
 ### Exit gate
 
 - [x] Manual Run transitions to `verifying` after the implementation runtime finishes.
 - [x] Passing checks move Run to `completed`.
-- [~] Failing checks create a clear event-stream failure; fix attempts still pending.
+- [x] Failing checks either create a bounded `fixing` attempt or fail immediately when `maxFixAttempts` is exhausted/zero.
 - [x] The agent cannot mark verification passed by itself.
 
 ## M4 — Source pickup: GitHub Issues and Jira

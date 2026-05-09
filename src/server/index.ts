@@ -16,7 +16,7 @@ const hub = new EventHub();
 const verifier = new DeterministicVerifier(config.verification, config.repositories);
 const reviewer = new FreshContextReviewer();
 const delivery = new PullRequestDelivery(config, store);
-const runtime = new RuntimeManager(store, hub, verifier, reviewer, delivery, config.repositories);
+const runtime = new RuntimeManager(store, hub, verifier, reviewer, delivery, config.repositories, config.workflow);
 const sourcePoller = new SourcePoller(config, store, runtime);
 if (process.env.TASKSMITH_SOURCE_POLLING === "1" || process.env.TASKSMITH_SOURCE_POLLING === "true") {
   startSourcePolling(sourcePoller, config.sourceFlow.pollIntervalSeconds);
