@@ -2,9 +2,9 @@
 
 ## Current status
 
-**Stage:** Phase 2 — Manual Run MVP  
-**Code status:** Manual Run API/UI vertical slice started  
-**Primary next milestone:** harden the Phase 3 verifier slice with repo-specific command profiles, then continue toward Jira pickup and PR creation.
+**Stage:** Phase 5 — PR delivery foundation  
+**Code status:** Manual Run, verifier, source pickup, and ready-to-review GitHub PR delivery foundations implemented  
+**Primary next milestone:** add fresh-context review and bounded fix attempts before PR delivery.
 
 TaskSmith currently has durable product/architecture docs, ADRs, research references, and implementation briefs. The next work should be a technical spike, not a full app scaffold.
 
@@ -55,8 +55,8 @@ Jira/GitHub issue marked tasksmith
 | M1 — Pi runtime spike | `[~]` | Prove Pi SDK/RPC works on target host with persistent sessions and live controls | Can prompt, stream, steer, follow-up, abort, replay messages |
 | M2 — Manual Run MVP | `[~]` | Create manual Run, run Pi in workspace, stream UI events | Browser shows live Pi work and accepts control messages |
 | M3 — Deterministic verifier | `[~]` | Run configured checks/e2e after agent work | Verification pass/fail drives next Run state |
-| M4 — Jira pickup | `[ ]` | Poll Jira, claim issue, create Run, update Jira | Tagged Jira issue becomes exactly one TaskSmith Run |
-| M5 — PR creation | `[ ]` | Commit/push verified diff and create ready-to-review PR | PR links Jira, Run, verification, review summary |
+| M4 — Source pickup | `[~]` | Poll GitHub/Jira, claim issue, create Run, update source | Tagged issue becomes exactly one TaskSmith Run |
+| M5 — PR creation | `[~]` | Commit/push verified diff and create ready-to-review PR | PR links source issue, Run, verification; review summary pending |
 | M6 — Fresh-context review | `[ ]` | Independent review before PR readiness | Findings are structured and can block/fix |
 | M7 — CI fixup | `[ ]` | Watch PR CI and fix failures | Failed CI creates bounded fix attempts |
 | M8 — Hardening | `[ ]` | Security, auth, deployment, observability | Safe enough for internal beta on real repos |
@@ -232,7 +232,7 @@ A GitHub issue or Jira issue matching configured readiness criteria creates exac
 
 ## M5 — PR creation
 
-**Status:** `[ ]` Not started  
+**Status:** `[~]` GitHub ready-PR foundation implemented  
 **Type:** delivery integration  
 **Inspired by:** CodeForge PR service, Kandev PR phase
 
@@ -242,25 +242,25 @@ Turn verified changes into a ready-to-review PR and link it back to the source i
 
 ### Tasks
 
-- [ ] Decide first Git provider: GitHub only or GitHub + GitLab.
-- [ ] Configure provider token storage.
-- [ ] Implement safe branch naming.
-- [ ] Implement commit author config.
-- [ ] Detect changed files and empty diffs.
-- [ ] Create branch from base branch.
-- [ ] Commit changes.
-- [ ] Push branch.
-- [ ] Create ready-to-review PR.
-- [ ] Generate PR body with Jira link, Run link, verification summary, review summary.
-- [ ] Store PR metadata.
-- [ ] Update Jira with PR link.
+- [x] Decide first Git provider: GitHub first; GitLab deferred.
+- [x] Configure provider token storage via `ghConfigDir` profile references, not copied secrets.
+- [x] Implement safe branch naming.
+- [x] Implement commit author config.
+- [x] Detect changed files and block empty PRs.
+- [x] Create branch from base branch.
+- [x] Commit changes.
+- [x] Push branch.
+- [x] Create ready-to-review PR without `--draft`.
+- [~] Generate PR body with source link, Run link, verification summary, and review placeholder; real review summary pending M6.
+- [x] Store PR metadata.
+- [x] Update GitHub/Jira source issue with PR link comment when credentials are available.
 
 ### Exit gate
 
-- [ ] Verified Run produces ready-to-review PR.
-- [ ] PR body has enough context for human review.
-- [ ] Jira links to PR and TaskSmith Run.
-- [ ] No auto-merge exists in MVP.
+- [x] Verified Run produces ready-to-review PR in delivery e2e.
+- [x] PR body has enough context for human review, including AI-generated marker.
+- [~] Jira/GitHub source issues receive PR link comments; real Jira status/label transitions remain pending.
+- [x] No auto-merge exists in MVP.
 
 ## M6 — Fresh-context review
 

@@ -73,6 +73,11 @@ async function routeHttp(deps: ServerDeps, req: IncomingMessage, res: ServerResp
     return;
   }
 
+  if (method === "GET" && url.pathname === "/api/pull-requests") {
+    sendJson(res, 200, { pullRequests: await deps.store.listPullRequests() });
+    return;
+  }
+
   if (method === "GET" && url.pathname === "/api/runs") {
     sendJson(res, 200, { runs: await deps.store.listRuns() });
     return;

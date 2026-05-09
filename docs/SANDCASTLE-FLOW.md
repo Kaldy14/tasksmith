@@ -83,14 +83,13 @@ Implemented now:
 - deterministic verifier,
 - workflow config parsing/exposure,
 - manual runs against configured repos,
-- GitHub Issues and Jira source polling with idempotent claims.
+- GitHub Issues and Jira source polling with idempotent claims,
+- ready-to-review GitHub PR creation after deterministic verification.
 
 Still to implement:
 
-- Jira status/label transitions beyond Run-link comments,
-- branch creation and commit policy,
+- Jira status/label transitions beyond Run-link/PR-link comments,
 - planning pass,
 - fresh-context deep review,
 - bounded fix attempts,
-- ready-to-review PR creation,
 - optional squash merge to main.

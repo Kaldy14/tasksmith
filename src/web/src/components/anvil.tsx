@@ -59,6 +59,17 @@ export function Anvil({ runId, onConnectionChange, onActivity }: AnvilProps) {
                   </span>
                 )
               ) : null}
+              {run.pullRequest ? (
+                <a
+                  href={run.pullRequest.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hidden max-w-[150px] items-center gap-1 truncate rounded-md border border-jade/30 bg-jade/10 px-2 py-0.5 text-[11px] font-medium text-jade hover:text-jade md:inline-flex"
+                >
+                  <span className="truncate">PR {run.pullRequest.number ? `#${run.pullRequest.number}` : run.pullRequest.branch}</span>
+                  <ExternalLink className="size-3 shrink-0" />
+                </a>
+              ) : null}
               <StatusPill status={run.status} className="hidden lg:inline-flex" />
               <span className="hidden text-[11px] text-muted-foreground/55 xl:inline">
                 {shortId(run.id)} · {formatRelativeTime(run.updatedAt)}

@@ -1,6 +1,7 @@
 import type { ControlKind, NormalizedRunEvent, RepositoryConfig, RunPaths, RunRecord, RuntimeHandle, StoredRunEvent } from "../domain/types.js";
 import type { FileStore } from "../storage/file-store.js";
 import type { EventHub } from "../server/event-hub.js";
+import type { PullRequestDelivery } from "../delivery/pull-request-delivery.js";
 import type { DeterministicVerifier } from "../verifier/deterministic-verifier.js";
 import { DemoRuntime, type RuntimeSink } from "./demo-adapter.js";
 import { PiRuntime } from "./pi-adapter.js";
@@ -16,6 +17,7 @@ export class RuntimeManager {
     private readonly store: FileStore,
     private readonly hub: EventHub,
     private readonly verifier: DeterministicVerifier,
+    private readonly delivery: PullRequestDelivery,
     repositories: Readonly<Record<string, RepositoryConfig>>,
   ) {
     this.workspacePreparer = new WorkspacePreparer(repositories);
@@ -76,7 +78,7 @@ export class RuntimeManager {
       });
       const latest = await this.requireRun(run.id);
       if (latest.status === "cancelled") return;
-      runtime = run.adapter === "demo" ? new DemoRuntime(latest, sink) : new PiRuntime(latest, paths, this.store, sink);
+      runtime = run.adapter === "demo" ? new DemoRuntime(latest, sink, paths) : new PiRuntime(latest, paths, this.store, sink);
       this.active.set(run.id, runtime);
       await this.emit(run.id, { type: "run_status", status: "preparing", detail: `Starting ${run.adapter} runtime` });
       await runtime.start();
@@ -127,8 +129,31 @@ export class RuntimeManager {
       return;
     }
 
-    await this.store.updateRun(runId, { status: "completed", finishedAt: new Date().toISOString() });
-    await this.emit(runId, { type: "run_status", status: "completed", detail: result.summary });
+    await this.deliverVerifiedRun(runId, result.summary);
+  }
+
+  private async deliverVerifiedRun(runId: string, verificationSummary: string): Promise<void> {
+    const run = await this.requireRun(runId);
+    await this.store.updateRun(runId, { status: "creating_pr" });
+    await this.emit(runId, { type: "run_status", status: "creating_pr", detail: "Preparing delivery" });
+
+    try {
+      const result = await this.delivery.deliver(run, this.store.pathsForRun(runId), async (event) => {
+        await this.emit(runId, event);
+      });
+      if (result.status === "created" && result.pullRequest) {
+        await this.store.updateRun(runId, { status: "pr_created", finishedAt: new Date().toISOString() });
+        await this.emit(runId, { type: "run_status", status: "pr_created", detail: result.summary });
+        return;
+      }
+      await this.store.updateRun(runId, { status: "completed", finishedAt: new Date().toISOString() });
+      await this.emit(runId, { type: "run_status", status: "completed", detail: `${verificationSummary} ${result.summary}` });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      await this.store.updateRun(runId, { status: "failed", error: `Delivery failed: ${message}`, finishedAt: new Date().toISOString() });
+      await this.emit(runId, { type: "error", message: "Delivery failed", detail: message });
+      await this.emit(runId, { type: "run_status", status: "failed", detail: message });
+    }
   }
 
   private async emit(runId: string, event: NormalizedRunEvent): Promise<StoredRunEvent> {

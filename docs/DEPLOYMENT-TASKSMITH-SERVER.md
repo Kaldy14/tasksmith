@@ -115,6 +115,7 @@ pnpm build                  # produces src/server/public/{index.html,assets/*}
 pnpm e2e:manual-run
 pnpm e2e:verifier
 pnpm e2e:source-pickup
+pnpm e2e:delivery
 pnpm e2e:pi-spike
 sudo systemctl restart tasksmith
 curl -fsS http://127.0.0.1:3000/healthz

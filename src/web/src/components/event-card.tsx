@@ -24,6 +24,7 @@ const TYPE_LABEL: Record<string, string> = {
   queue_update: "Queue",
   session_state: "Session",
   verification: "Verification",
+  delivery: "Delivery",
   error: "Error",
   attempt_done: "Attempt done",
 };
@@ -57,6 +58,8 @@ function summarize(event: StoredRunEvent): string {
       return `session=${data.sessionId} · messages=${data.messageCount} · streaming=${data.isStreaming}`;
     case "verification":
       return formatVerification(data);
+    case "delivery":
+      return formatDelivery(data);
     case "error":
       return `${data.message}${data.detail ? `\n${data.detail}` : ""}`;
     case "attempt_done":
@@ -74,12 +77,25 @@ const CONTROL_TEXT = {
 
 type VerificationEvent = Extract<StoredRunEvent["data"], { type: "verification" }>;
 
+type DeliveryEvent = Extract<StoredRunEvent["data"], { type: "delivery" }>;
+
 function formatVerification(data: VerificationEvent): string {
   const lines = [`${data.name}: ${data.status}`, `$ ${data.command}`];
   if (data.exitCode !== undefined) lines.push(`exitCode=${data.exitCode}`);
   if (data.durationMs !== undefined) lines.push(`duration=${data.durationMs}ms`);
   if (data.stdout) lines.push(`stdout:\n${data.stdout.trimEnd()}`);
   if (data.stderr) lines.push(`stderr:\n${data.stderr.trimEnd()}`);
+  if (data.error) lines.push(`error=${data.error}`);
+  return lines.join("\n");
+}
+
+function formatDelivery(data: DeliveryEvent): string {
+  const lines = [`${data.mode}: ${data.status}`];
+  if (data.provider) lines.push(`provider=${data.provider}`);
+  if (data.branch) lines.push(`branch=${data.branch}`);
+  if (data.url) lines.push(`url=${data.url}`);
+  if (data.number !== undefined) lines.push(`number=${data.number}`);
+  if (data.detail) lines.push(data.detail);
   if (data.error) lines.push(`error=${data.error}`);
   return lines.join("\n");
 }
@@ -105,13 +121,14 @@ function isWorkEvent(type: string): boolean {
     type === "command_output" ||
     type === "queue_update" ||
     type === "session_state" ||
-    type === "verification"
+    type === "verification" ||
+    type === "delivery"
   );
 }
 
 function workToneClass(type: string): string {
   if (type === "tool_result") return "text-jade";
-  if (type === "verification") return "text-jade";
+  if (type === "verification" || type === "delivery") return "text-jade";
   if (type === "command" || type === "command_output") return "text-copper";
   return "text-muted-foreground/75";
 }

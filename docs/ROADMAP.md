@@ -27,7 +27,7 @@ Jira/GitHub issue marked tasksmith
 | 2. Manual Run MVP | Not started | Manual prompt -> Pi run -> live UI -> controls -> event replay |
 | 3. Deterministic verifier | Not started | Configured checks/e2e run outside the agent and drive fix attempts |
 | 4. Source pickup | In progress | GitHub/Jira poller creates exactly one Run in e2e; real tracker auth/status sync remains |
-| 5. PR creation | Not started | Verified changes become ready-to-review PR linked to source issue and Run |
+| 5. PR creation | In progress | Verified changes become ready-to-review GitHub PRs linked to source issue and Run |
 | 6. Fresh-context review | Not started | Independent diff review blocks or fixes risky changes |
 | 7. CI fixup | Not started | Failed PR CI logs create bounded fix attempts |
 | 8. Hardening | Not started | Hetzner deployment, auth, redaction, isolation, observability |

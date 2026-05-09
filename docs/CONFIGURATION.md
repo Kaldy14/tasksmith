@@ -104,7 +104,7 @@ GH_CONFIG_DIR=/home/deploy/.config/gh-kaldy14 gh auth setup-git
 GH_CONFIG_DIR=/home/deploy/.config/gh-kaldy14 gh auth status
 ```
 
-GitHub CLI login is intentionally manual: it avoids putting GitHub credentials into TaskSmith prompts, config files, or shell history. Public HTTPS clones do not need auth. Private HTTPS clones, GitHub Issues intake, and future PR creation do. Do not copy `ghConfigDir` auth directories into agent workspaces.
+GitHub CLI login is intentionally manual: it avoids putting GitHub credentials into TaskSmith prompts, config files, or shell history. Public HTTPS clones do not need auth. Private HTTPS clones, GitHub Issues intake, and PR creation do. Do not copy `ghConfigDir` auth directories into agent workspaces.
 
 ## Jira source example
 
@@ -121,7 +121,7 @@ In that config:
 - `issueProvider.type = "jira"` marks the repo for Jira intake.
 - `jql` defines the readiness query for that repo.
 - `repoLabel` documents the expected Jira repo-routing label.
-- `gitProvider.ghConfigDir` points at the work GitHub CLI profile for future PR creation.
+- `gitProvider.ghConfigDir` points at the work GitHub CLI profile for PR creation.
 - `gitSshCommand` can force a work-only SSH key for clones.
 
 Example routing:
@@ -188,6 +188,15 @@ or:
 ```
 
 `ready_pr` is the safe default and creates a non-draft, ready-to-review PR. `squash_merge_main` is an explicit delivery mode for deployments/repos where direct merge is desired. Older configs containing `draft_pr` are accepted as a compatibility alias for `ready_pr`; update them when touched.
+
+Ready PR delivery currently requires:
+
+- `gitUrl`, so TaskSmith can clone and push a branch,
+- `gitProvider.type = "github"`,
+- `gitProvider.owner` and `gitProvider.repo`,
+- a working `gh` auth profile via `gitProvider.ghConfigDir` when the repo is private or PR creation requires auth.
+
+After verification passes, TaskSmith checks for a non-empty diff, creates a branch named `tasksmith/<source-or-title>-<run-suffix>`, commits all workspace changes with the TaskSmith bot identity, pushes the branch, and runs `gh pr create` without `--draft`. PR metadata is stored in `state/pull-requests.json` and exposed at `GET /api/pull-requests`. Source issues receive a PR-link comment when credentials are available.
 
 ## Verification precedence
 

@@ -1,5 +1,7 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import type { ControlKind, NormalizedRunEvent, RunRecord, RuntimeHandle } from "../domain/types.js";
+import type { ControlKind, NormalizedRunEvent, RunPaths, RunRecord, RuntimeHandle } from "../domain/types.js";
 
 export interface RuntimeSink {
   emit(event: NormalizedRunEvent): Promise<void>;
@@ -16,6 +18,7 @@ export class DemoRuntime implements RuntimeHandle {
   constructor(
     private readonly run: RunRecord,
     private readonly sink: RuntimeSink,
+    private readonly paths?: RunPaths,
   ) {}
 
   async start(): Promise<void> {
@@ -32,6 +35,7 @@ export class DemoRuntime implements RuntimeHandle {
       await delay(200);
       if (await this.stopIfAborted()) return;
       await this.sink.emit({ type: "command_output", command: "printf demo-verifier-placeholder", output: "demo-verifier-placeholder\n", toolCallId: "demo-command" });
+      await this.maybeWriteDemoChange();
       await this.flushSteering();
       await this.flushFollowUps();
       const finalText = "Demo run complete. The UI can replay this session, steer active work, queue follow-ups, and abort safely.";
@@ -67,6 +71,15 @@ export class DemoRuntime implements RuntimeHandle {
       await this.sink.emit({ type: "assistant_delta", text: token });
       await delay(55);
     }
+  }
+
+  private async maybeWriteDemoChange(): Promise<void> {
+    if (!this.paths || !this.run.prompt.includes("TASKSMITH_DEMO_WRITE_CHANGE")) return;
+    const filePath = path.join(this.paths.workspaceDir, "TASKSMITH_DEMO_CHANGE.txt");
+    await mkdir(path.dirname(filePath), { recursive: true });
+    await writeFile(filePath, `Demo change created for ${this.run.id}\n`, "utf8");
+    await this.sink.emit({ type: "command", command: "write TASKSMITH_DEMO_CHANGE.txt", toolCallId: "demo-write-change" });
+    await this.sink.emit({ type: "command_output", command: "write TASKSMITH_DEMO_CHANGE.txt", output: "TASKSMITH_DEMO_CHANGE.txt\n", toolCallId: "demo-write-change" });
   }
 
   private async flushSteering(): Promise<void> {

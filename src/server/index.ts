@@ -1,4 +1,5 @@
 import { loadConfig } from "./config.js";
+import { PullRequestDelivery } from "../delivery/pull-request-delivery.js";
 import { FileStore } from "../storage/file-store.js";
 import { EventHub } from "./event-hub.js";
 import { RuntimeManager } from "../runtime/runtime-manager.js";
@@ -12,7 +13,8 @@ await store.init();
 await store.markActiveRunsFailedOnBoot();
 const hub = new EventHub();
 const verifier = new DeterministicVerifier(config.verification, config.repositories);
-const runtime = new RuntimeManager(store, hub, verifier, config.repositories);
+const delivery = new PullRequestDelivery(config, store);
+const runtime = new RuntimeManager(store, hub, verifier, delivery, config.repositories);
 const sourcePoller = new SourcePoller(config, store, runtime);
 if (process.env.TASKSMITH_SOURCE_POLLING === "1" || process.env.TASKSMITH_SOURCE_POLLING === "true") {
   startSourcePolling(sourcePoller, config.sourceFlow.pollIntervalSeconds);

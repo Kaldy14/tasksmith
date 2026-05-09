@@ -29,8 +29,8 @@ Negative:
 
 ## Acceptance criteria
 
-- [ ] Repo config declares verification commands.
-- [ ] Verifier runs commands independently from Pi.
-- [ ] Command output and exit code are persisted.
+- [x] Repo config declares verification commands.
+- [x] Verifier runs commands independently from Pi.
+- [x] Command output and exit code are persisted.
 - [ ] Failed verifier output can be passed into a fix attempt.
-- [ ] PR creation requires verification pass unless manually overridden.
+- [x] PR creation requires verification pass unless manually overridden.

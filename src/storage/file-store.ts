@@ -2,7 +2,7 @@ import { constants as fsConstants } from "node:fs";
 import { access, appendFile, cp, mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import type { AppConfig, CreateRunInput, CreateSourceClaimInput, NormalizedRunEvent, RunPaths, RunRecord, RunStatus, SourceClaim, StoredRunEvent } from "../domain/types.js";
+import type { AppConfig, CreatePullRequestRecordInput, CreateRunInput, CreateSourceClaimInput, NormalizedRunEvent, PullRequestRecord, RunPaths, RunRecord, RunStatus, SourceClaim, StoredRunEvent } from "../domain/types.js";
 import { redactForStorage } from "../domain/redaction.js";
 
 interface RunsStateFile {
@@ -15,14 +15,21 @@ interface ClaimsStateFile {
   claims: SourceClaim[];
 }
 
+interface PullRequestsStateFile {
+  version: 1;
+  pullRequests: PullRequestRecord[];
+}
+
 export class FileStore {
   private readonly runsStatePath: string;
   private readonly claimsStatePath: string;
+  private readonly pullRequestsStatePath: string;
   private readonly writeQueues = new Map<string, Promise<void>>();
 
   constructor(private readonly config: AppConfig) {
     this.runsStatePath = path.join(config.stateDir, "runs.json");
     this.claimsStatePath = path.join(config.stateDir, "source-claims.json");
+    this.pullRequestsStatePath = path.join(config.stateDir, "pull-requests.json");
   }
 
   async init(): Promise<void> {
@@ -33,6 +40,9 @@ export class FileStore {
     }
     if (!(await exists(this.claimsStatePath))) {
       await this.writeClaimsState({ version: 1, claims: [] });
+    }
+    if (!(await exists(this.pullRequestsStatePath))) {
+      await this.writePullRequestsState({ version: 1, pullRequests: [] });
     }
   }
 
@@ -134,6 +144,55 @@ export class FileStore {
     return updated;
   }
 
+  async listPullRequests(): Promise<PullRequestRecord[]> {
+    const state = await this.readPullRequestsState();
+    return [...state.pullRequests].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }
+
+  async getPullRequestForRun(runId: string): Promise<PullRequestRecord | undefined> {
+    const state = await this.readPullRequestsState();
+    return state.pullRequests.find((pullRequest) => pullRequest.runId === runId);
+  }
+
+  async recordPullRequest(input: CreatePullRequestRecordInput): Promise<PullRequestRecord> {
+    let record: PullRequestRecord;
+    await this.enqueue("__pull_requests__", async () => {
+      const state = await this.readPullRequestsState();
+      const existing = state.pullRequests.find((pullRequest) => pullRequest.runId === input.runId);
+      if (existing) {
+        record = existing;
+        return;
+      }
+      const now = new Date().toISOString();
+      record = {
+        id: `pr-${randomUUID().slice(0, 12)}`,
+        runId: input.runId,
+        provider: input.provider,
+        url: input.url,
+        ...(input.number === undefined ? {} : { number: input.number }),
+        branch: input.branch,
+        baseBranch: input.baseBranch,
+        title: input.title,
+        body: input.body,
+        status: "open",
+        createdAt: now,
+        updatedAt: now,
+      };
+      await this.writePullRequestsState({ version: 1, pullRequests: [record, ...state.pullRequests] });
+    });
+    const saved = record!;
+    await this.updateRun(input.runId, {
+      pullRequest: {
+        provider: saved.provider,
+        url: saved.url,
+        ...(saved.number === undefined ? {} : { number: saved.number }),
+        branch: saved.branch,
+        status: saved.status,
+      },
+    });
+    return saved;
+  }
+
   async getRun(runId: string): Promise<RunRecord | undefined> {
     const state = await this.readRunsState();
     return state.runs.find((run) => run.id === runId);
@@ -195,7 +254,7 @@ export class FileStore {
   }
 
   async markActiveRunsFailedOnBoot(): Promise<void> {
-    const terminal = new Set<RunStatus>(["completed", "failed", "cancelled"]);
+    const terminal = new Set<RunStatus>(["completed", "pr_created", "failed", "cancelled"]);
     await this.mutateRuns((runs) => runs.map((run) => {
       if (terminal.has(run.status)) return run;
       return {
@@ -253,6 +312,11 @@ export class FileStore {
     return JSON.parse(text) as ClaimsStateFile;
   }
 
+  private async readPullRequestsState(): Promise<PullRequestsStateFile> {
+    const text = await readFile(this.pullRequestsStatePath, "utf8");
+    return JSON.parse(text) as PullRequestsStateFile;
+  }
+
   private async writeRunsState(state: RunsStateFile): Promise<void> {
     await mkdir(path.dirname(this.runsStatePath), { recursive: true });
     const tmp = `${this.runsStatePath}.tmp`;
@@ -265,6 +329,13 @@ export class FileStore {
     const tmp = `${this.claimsStatePath}.tmp`;
     await writeFile(tmp, `${JSON.stringify(state, null, 2)}\n`, "utf8");
     await rename(tmp, this.claimsStatePath);
+  }
+
+  private async writePullRequestsState(state: PullRequestsStateFile): Promise<void> {
+    await mkdir(path.dirname(this.pullRequestsStatePath), { recursive: true });
+    const tmp = `${this.pullRequestsStatePath}.tmp`;
+    await writeFile(tmp, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+    await rename(tmp, this.pullRequestsStatePath);
   }
 
   private async mutateRuns(mutator: (runs: RunRecord[]) => RunRecord[]): Promise<void> {

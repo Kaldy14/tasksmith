@@ -31,6 +31,7 @@ pnpm build
 pnpm e2e:manual-run
 pnpm e2e:verifier
 pnpm e2e:source-pickup
+pnpm e2e:delivery
 pnpm e2e:pi-spike
 ```
 
@@ -49,6 +50,7 @@ GET  /api/runs
 POST /api/runs
 POST /api/sources/poll
 GET  /api/source-claims
+GET  /api/pull-requests
 GET  /api/runs/:id
 GET  /api/runs/:id/events?after=<sequence>
 POST /api/runs/:id/messages
@@ -165,6 +167,7 @@ pnpm build
 pnpm e2e:manual-run
 pnpm e2e:verifier
 pnpm e2e:source-pickup
+pnpm e2e:delivery
 pnpm e2e:pi-spike
 ```
 
@@ -188,4 +191,4 @@ The Docker image now defaults to `pnpm start` and exposes port `3000`. `docker-c
 - File store is not intended as the final multi-worker database.
 - Demo runtime is for deterministic e2e only.
 - Real Pi runtime requires provisioning narrow auth files under `TASKSMITH_PI_AUTH_SOURCE`.
-- Repo-specific verification profiles, review, PR creation, Jira pickup, and CI fixup are still later phases.
+- Fresh-context review, bounded fix attempts, Jira status transitions, and CI fixup are still later phases.

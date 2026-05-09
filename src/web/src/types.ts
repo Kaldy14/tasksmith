@@ -4,6 +4,8 @@ export type RunStatus =
   | "running"
   | "waiting_for_control"
   | "verifying"
+  | "creating_pr"
+  | "pr_created"
   | "completed"
   | "failed"
   | "cancelled";
@@ -22,6 +24,14 @@ export interface RunSourceSnapshot {
   labels: string[];
 }
 
+export interface PullRequestSummary {
+  provider: "github";
+  url: string;
+  number?: number;
+  branch: string;
+  status: "open";
+}
+
 export interface RunRecord {
   id: string;
   sourceType: RunSourceType;
@@ -31,6 +41,7 @@ export interface RunRecord {
   adapter: RuntimeAdapter;
   source?: RunSourceSnapshot;
   claimKey?: string;
+  pullRequest?: PullRequestSummary;
   status: RunStatus;
   currentAttemptId: string;
   runDir: string;
@@ -119,6 +130,17 @@ export type NormalizedRunEvent =
       stderr?: string;
       stdoutPath?: string;
       stderrPath?: string;
+      error?: string;
+    }
+  | {
+      type: "delivery";
+      mode: "ready_pr" | "squash_merge_main";
+      status: "running" | "created" | "skipped" | "failed";
+      provider?: "github";
+      branch?: string;
+      url?: string;
+      number?: number;
+      detail?: string;
       error?: string;
     }
   | { type: "error"; message: string; detail?: string }
