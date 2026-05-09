@@ -169,8 +169,7 @@ function summarizeReview(status: ReviewRecord["status"], findings: readonly Revi
 function parseChangedFiles(statusOutput: string): string[] {
   return statusOutput
     .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
+    .filter((line) => line.trim().length > 0)
     .map((line) => line.slice(3).trim())
     .filter(Boolean)
     .map((file) => file.includes(" -> ") ? file.split(" -> ").at(-1) ?? file : file);
@@ -179,9 +178,8 @@ function parseChangedFiles(statusOutput: string): string[] {
 function parseUntrackedFiles(statusOutput: string): string[] {
   return statusOutput
     .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith("?? "))
-    .map((line) => line.slice(3).trim())
+    .filter((line) => line.trim().startsWith("?? "))
+    .map((line) => line.trim().slice(3).trim())
     .filter(Boolean);
 }
 

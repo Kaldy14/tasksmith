@@ -184,16 +184,27 @@ async function handleSocketMessage(deps: ServerDeps, runId: string, raw: Buffer 
 }
 
 async function serveStatic(config: AppConfig, pathname: string, res: ServerResponse): Promise<void> {
-  const relativePath = pathname === "/" || pathname.startsWith("/runs/") || pathname === "/config" ? "index.html" : pathname.replace(/^\//, "");
-  const filePath = path.resolve(config.publicDir, relativePath);
+  const requestedPath = pathname === "/" ? "index.html" : pathname.replace(/^\//, "");
+  const filePath = path.resolve(config.publicDir, requestedPath);
   if (!isPathInside(config.publicDir, filePath)) return sendJson(res, 403, { error: "Forbidden" });
+  if (await serveFile(filePath, res)) return;
+
+  if (path.extname(pathname)) return sendJson(res, 404, { error: "Not found" });
+  const indexPath = path.resolve(config.publicDir, "index.html");
+  if (!isPathInside(config.publicDir, indexPath)) return sendJson(res, 403, { error: "Forbidden" });
+  if (await serveFile(indexPath, res)) return;
+  sendJson(res, 404, { error: "Not found" });
+}
+
+async function serveFile(filePath: string, res: ServerResponse): Promise<boolean> {
   try {
     await readFile(filePath);
   } catch {
-    return sendJson(res, 404, { error: "Not found" });
+    return false;
   }
   res.writeHead(200, { "content-type": contentType(filePath), "cache-control": "no-store" });
   createReadStream(filePath).pipe(res);
+  return true;
 }
 
 async function readJson(req: IncomingMessage): Promise<unknown> {

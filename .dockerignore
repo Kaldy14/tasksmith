@@ -6,6 +6,7 @@ dist
 build
 .next
 coverage
+src/server/public
 .env
 .env.*
 !.env.example

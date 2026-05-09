@@ -198,8 +198,7 @@ function commandEnv(repo: Pick<RepositoryConfig, "gitProvider" | "gitSshCommand"
 function parseChangedFiles(statusOutput: string): string[] {
   return statusOutput
     .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
+    .filter((line) => line.trim().length > 0)
     .map((line) => line.slice(3).trim())
     .filter(Boolean);
 }

@@ -39,7 +39,7 @@ export function loadConfig(): AppConfig {
     runsDir: path.join(dataDir, "runs"),
     stateDir: path.join(dataDir, "state"),
     piAuthSourceDir: path.resolve(process.env.TASKSMITH_PI_AUTH_SOURCE ?? "/run/tasksmith/pi-auth"),
-    publicDir: path.join(repoRoot, "src", "server", "public"),
+    publicDir: path.join(repoRoot, "dist", "web"),
     publicBaseUrl: parsePublicBaseUrl(process.env.TASKSMITH_PUBLIC_URL, process.env.HOST ?? "0.0.0.0", process.env.PORT ?? "3000"),
     ...(configFilePath ? { configFilePath } : {}),
     repositories: fileConfig?.repos ?? {},
