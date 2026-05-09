@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
-import type { AppConfig } from "../domain/types.js";
+import type { AppConfig, RepositoryConfig } from "../domain/types.js";
 import { parseControlInput, parseCreateRunInput } from "../domain/validation.js";
 import type { FileStore } from "../storage/file-store.js";
 import type { RuntimeManager } from "../runtime/runtime-manager.js";
@@ -49,6 +49,11 @@ async function routeHttp(deps: ServerDeps, req: IncomingMessage, res: ServerResp
 
   if (method === "GET" && url.pathname === "/healthz") {
     sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  if (method === "GET" && url.pathname === "/api/config") {
+    sendJson(res, 200, { repositories: publicRepositories(deps.config.repositories) });
     return;
   }
 
@@ -158,6 +163,20 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
 
 function parseUrl(req: IncomingMessage): URL {
   return new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+}
+
+function publicRepositories(repositories: Readonly<Record<string, RepositoryConfig>>): Array<Record<string, unknown>> {
+  return Object.entries(repositories)
+    .map(([key, repo]) => ({
+      key,
+      displayName: repo.displayName ?? key,
+      defaultBranch: repo.defaultBranch ?? "main",
+      hasGitUrl: Boolean(repo.gitUrl),
+      gitProvider: repo.gitProvider ? { type: repo.gitProvider.type, owner: repo.gitProvider.owner, repo: repo.gitProvider.repo } : undefined,
+      issueProvider: repo.issueProvider ? { type: repo.issueProvider.type } : undefined,
+      hasVerificationProfile: repo.verify !== undefined,
+    }))
+    .sort((left, right) => String(left.displayName).localeCompare(String(right.displayName)));
 }
 
 function isPathInside(basePath: string, candidatePath: string): boolean {

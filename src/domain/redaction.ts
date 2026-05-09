@@ -20,7 +20,9 @@ function redactString(value: string): string {
     .replace(/sk-ant-[A-Za-z0-9_-]+/g, "[REDACTED:anthropic-key]")
     .replace(/sk-[A-Za-z0-9_-]{20,}/g, "[REDACTED:api-key]")
     .replace(/gh[pousr]_[A-Za-z0-9_]{20,}/g, "[REDACTED:github-token]")
-    .replace(/Bearer\s+[A-Za-z0-9._~+/-]+=*/gi, "Bearer [REDACTED]");
+    .replace(/Bearer\s+[A-Za-z0-9._~+/-]+=*/gi, "Bearer [REDACTED]")
+    .replace(/https:\/\/[^\s/@:]+:[^\s/@]+@/gi, "https://[REDACTED]@")
+    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[REDACTED:private-key]");
 }
 
 function isSecretKey(key: string): boolean {

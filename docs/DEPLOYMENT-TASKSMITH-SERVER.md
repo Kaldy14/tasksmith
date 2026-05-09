@@ -39,6 +39,7 @@ node v24.14.0
 npm 11.9.0
 pnpm 10.5.1
 pi 0.73.0
+gh 2.45.0
 ```
 
 `pi` is installed from npm package `@mariozechner/pi-coding-agent`. Do not install the Ubuntu `pi` package; it is unrelated.
@@ -77,6 +78,7 @@ TaskSmith is configured with:
 
 ```txt
 TASKSMITH_PI_AUTH_SOURCE=/home/deploy/.pi/agent
+TASKSMITH_CONFIG_PATH=/opt/tasksmith/config/repos.json
 ```
 
 For each Run, TaskSmith copies only narrow Pi auth/config material into the per-run directory. It must not mount or copy the full deploy home directory.

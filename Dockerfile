@@ -31,4 +31,4 @@ RUN pnpm typecheck && pnpm typecheck:web && pnpm build
 VOLUME ["/data/tasksmith"]
 EXPOSE 3000
 
-CMD ["pnpm", "start"]
+CMD ["node", "--import", "tsx", "src/server/index.ts"]

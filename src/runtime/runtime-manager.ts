@@ -1,30 +1,32 @@
-import type { ControlKind, NormalizedRunEvent, RunRecord, RuntimeHandle, StoredRunEvent } from "../domain/types.js";
+import type { ControlKind, NormalizedRunEvent, RepositoryConfig, RunPaths, RunRecord, RuntimeHandle, StoredRunEvent } from "../domain/types.js";
 import type { FileStore } from "../storage/file-store.js";
 import type { EventHub } from "../server/event-hub.js";
 import type { DeterministicVerifier } from "../verifier/deterministic-verifier.js";
 import { DemoRuntime, type RuntimeSink } from "./demo-adapter.js";
 import { PiRuntime } from "./pi-adapter.js";
+import { WorkspacePreparer } from "./workspace-preparer.js";
+
+type StartableRuntime = RuntimeHandle & { start(): Promise<void> };
 
 export class RuntimeManager {
   private readonly active = new Map<string, RuntimeHandle>();
+  private readonly workspacePreparer: WorkspacePreparer;
 
   constructor(
     private readonly store: FileStore,
     private readonly hub: EventHub,
     private readonly verifier: DeterministicVerifier,
-  ) {}
+    repositories: Readonly<Record<string, RepositoryConfig>>,
+  ) {
+    this.workspacePreparer = new WorkspacePreparer(repositories);
+  }
 
   async startRun(run: RunRecord): Promise<void> {
     const sink = this.createSink(run);
     const paths = this.store.pathsForRun(run.id);
-    const runtime = run.adapter === "demo" ? new DemoRuntime(run, sink) : new PiRuntime(run, paths, this.store, sink);
-    this.active.set(run.id, runtime);
     await this.store.updateRun(run.id, { status: "preparing", startedAt: new Date().toISOString() });
-    await this.emit(run.id, { type: "run_status", status: "preparing", detail: `Starting ${run.adapter} runtime` });
-    void runtime.start().finally(() => {
-      this.active.delete(run.id);
-      void runtime.dispose();
-    });
+    await this.emit(run.id, { type: "run_status", status: "preparing", detail: `Preparing ${run.adapter} runtime` });
+    void this.runAttempt(run, paths, sink);
   }
 
   async sendControl(runId: string, kind: ControlKind, message: string): Promise<void> {
@@ -64,6 +66,26 @@ export class RuntimeManager {
     if (!runtime) throw new Error("Run is not active");
     await this.store.appendControlEvent(runId, { type: "abort_bash" });
     await runtime.abortBash();
+  }
+
+  private async runAttempt(run: RunRecord, paths: RunPaths, sink: RuntimeSink): Promise<void> {
+    let runtime: StartableRuntime | undefined;
+    try {
+      await this.workspacePreparer.prepare(run, paths, async (event) => {
+        await this.emit(run.id, event);
+      });
+      const latest = await this.requireRun(run.id);
+      if (latest.status === "cancelled") return;
+      runtime = run.adapter === "demo" ? new DemoRuntime(latest, sink) : new PiRuntime(latest, paths, this.store, sink);
+      this.active.set(run.id, runtime);
+      await this.emit(run.id, { type: "run_status", status: "preparing", detail: `Starting ${run.adapter} runtime` });
+      await runtime.start();
+    } catch (error: unknown) {
+      await sink.setFailed(error instanceof Error ? error.message : String(error));
+    } finally {
+      this.active.delete(run.id);
+      await runtime?.dispose();
+    }
   }
 
   private createSink(run: RunRecord): RuntimeSink {

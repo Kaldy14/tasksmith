@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,8 +11,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { createRun } from "@/api";
-import type { RuntimeAdapter } from "@/types";
+import { createRun, getPublicConfig } from "@/api";
+import type { RepositorySummary, RuntimeAdapter } from "@/types";
 
 interface IntakeFormProps {
   onCreated?: () => void;
@@ -22,10 +22,27 @@ export function IntakeForm({ onCreated }: IntakeFormProps) {
   const navigate = useNavigate();
   const [title, setTitle] = useState("");
   const [repoKey, setRepoKey] = useState("");
+  const [repositories, setRepositories] = useState<RepositorySummary[]>([]);
   const [adapter, setAdapter] = useState<RuntimeAdapter>("demo");
   const [prompt, setPrompt] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getPublicConfig()
+      .then((config) => {
+        if (cancelled) return;
+        setRepositories(config.repositories);
+        setRepoKey((current) => current || config.repositories[0]?.key || "");
+      })
+      .catch(() => {
+        // Config is advisory for the manual intake UI; run creation still validates server-side.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -56,17 +73,32 @@ export function IntakeForm({ onCreated }: IntakeFormProps) {
         className="h-8 text-[0.78rem]"
       />
       <div className="grid grid-cols-2 gap-2">
-        <Input
-          id="repoKey"
-          name="repoKey"
-          required
-          maxLength={80}
-          placeholder="Project"
-          value={repoKey}
-          onChange={(e) => setRepoKey(e.target.value)}
-          disabled={submitting}
-          className="h-8 text-[0.78rem]"
-        />
+        {repositories.length > 0 ? (
+          <Select value={repoKey} onValueChange={setRepoKey} disabled={submitting}>
+            <SelectTrigger id="repoKey" aria-label="Repository" className="h-8 text-[0.78rem]">
+              <SelectValue placeholder="Repository" />
+            </SelectTrigger>
+            <SelectContent>
+              {repositories.map((repo) => (
+                <SelectItem key={repo.key} value={repo.key}>
+                  {repo.displayName}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <Input
+            id="repoKey"
+            name="repoKey"
+            required
+            maxLength={80}
+            placeholder="Project"
+            value={repoKey}
+            onChange={(e) => setRepoKey(e.target.value)}
+            disabled={submitting}
+            className="h-8 text-[0.78rem]"
+          />
+        )}
         <Select
           value={adapter}
           onValueChange={(v) => setAdapter(v as RuntimeAdapter)}

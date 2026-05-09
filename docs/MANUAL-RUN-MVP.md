@@ -111,7 +111,7 @@ Default Phase 3 command:
 workspace-smoke: verify that the run workspace contains README.md
 ```
 
-Operators can replace the default with a JSON array in `TASKSMITH_VERIFICATION_COMMANDS`:
+Operators can replace the default for all repos with a JSON array in `TASKSMITH_VERIFICATION_COMMANDS`:
 
 ```json
 [
@@ -119,7 +119,30 @@ Operators can replace the default with a JSON array in `TASKSMITH_VERIFICATION_C
 ]
 ```
 
-Verifier commands run with a minimal environment, `HOME` set to the per-run home directory, and `cwd` set to the run workspace. Stdout/stderr are redacted before event storage and log writing.
+For repo-specific profiles and checkout metadata, set `TASKSMITH_CONFIG_PATH` to a JSON file:
+
+```json
+{
+  "defaultVerify": [
+    { "name": "workspace-smoke", "command": "node -e \"console.log('ok')\"", "timeoutMs": 30000 }
+  ],
+  "repos": {
+    "vosime-admin": {
+      "displayName": "Vosime Admin",
+      "gitUrl": "git@github.com:YOUR_ORG/vosime-admin.git",
+      "defaultBranch": "main",
+      "gitProvider": { "type": "github", "owner": "YOUR_ORG", "repo": "vosime-admin" },
+      "issueProvider": { "type": "jira", "jql": "project = VOS AND labels = ai-ready AND labels = repo:vosime-admin" },
+      "verify": [
+        { "name": "typecheck", "command": "pnpm typecheck", "timeoutMs": 120000 },
+        { "name": "lint", "command": "pnpm lint", "timeoutMs": 120000 }
+      ]
+    }
+  }
+}
+```
+
+Configured repositories appear in the manual intake UI. If a repository has `gitUrl`, TaskSmith clones it into the per-run workspace before starting the runtime. `TASKSMITH_VERIFICATION_COMMANDS` overrides `defaultVerify`; explicit `repos.<repoKey>.verify` overrides the default for that repository. Verifier commands run with a minimal environment, `HOME` set to the per-run home directory, and `cwd` set to the run workspace. Stdout/stderr are redacted before event storage and log writing.
 
 ## Browser UI
 

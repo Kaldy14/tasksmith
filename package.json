@@ -7,7 +7,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "typecheck:web": "tsc --noEmit -p src/web/tsconfig.json",
-    "start": "tsx src/server/index.ts",
+    "start": "pnpm build && tsx src/server/index.ts",
     "dev:web": "vite --config src/web/vite.config.ts",
     "build:web": "vite build --config src/web/vite.config.ts",
     "build": "pnpm build:web",

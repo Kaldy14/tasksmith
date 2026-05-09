@@ -176,8 +176,8 @@ TaskSmith, not the agent, runs configured checks after implementation.
 
 ### Tasks
 
-- [~] Define repository config format: initial slice uses global `TASKSMITH_VERIFICATION_COMMANDS`; repo registry still pending.
-- [ ] Add repo registry for `vosime-admin`, `core-hub`, future monorepo.
+- [x] Define repository config format: `TASKSMITH_REPO_CONFIG_PATH` supports `defaultVerify` and per-repo `verify` command profiles.
+- [~] Add repo registry for `vosime-admin`, `core-hub`, future monorepo: config format exists; real repo profiles still need to be authored.
 - [ ] Add verifier command model: name, command, timeout, env policy, artifact policy.
 - [x] Implement verifier runner outside Pi.
 - [x] Capture stdout/stderr and exit codes.
@@ -194,19 +194,20 @@ TaskSmith, not the agent, runs configured checks after implementation.
 - [~] Failing checks create a clear event-stream failure; fix attempts still pending.
 - [x] The agent cannot mark verification passed by itself.
 
-## M4 — Jira pickup
+## M4 — Source pickup: GitHub Issues and Jira
 
-**Status:** `[ ]` Not started  
+**Status:** `[~]` Config foundation in progress
 **Type:** source integration  
-**Inspired by:** Kandev Jira JQL watches, but with Jira kept as source of truth
+**Inspired by:** Kandev Jira JQL watches, GitHub Issues for the personal instance, but with external trackers kept as source of truth
 
 ### Goal
 
-A Jira issue matching configured readiness criteria creates exactly one TaskSmith Run.
+A GitHub issue or Jira issue matching configured readiness criteria creates exactly one TaskSmith Run.
 
 ### Tasks
 
-- [ ] Configure Jira credentials securely.
+- [~] Configure source credentials securely: GitHub CLI profile support is documented; Jira env/secrets still pending.
+- [x] Define repository/source config: per-repo GitHub Issues or Jira metadata, git checkout URL, branch, verification profile.
 - [ ] Define Jira watch config: JQL, repo routing policy, enabled flag, poll interval.
 - [ ] Implement Jira poller.
 - [ ] Implement `jira_claims` unique claim table.
@@ -223,7 +224,7 @@ A Jira issue matching configured readiness criteria creates exactly one TaskSmit
 - [ ] Duplicate polling does not duplicate Run.
 - [ ] Jira receives Run link comment.
 - [ ] Jira status/labels reflect claimed/running/failed/pr-created.
-- [ ] Repo routing works for `vosime-admin` and `core-hub`.
+- [ ] Repo routing works for personal GitHub repos (`tasksmith`, `robodoggo`, `clui`) and work Jira repos (`vosime-admin`, `core-hub`).
 
 ## M5 — PR creation
 

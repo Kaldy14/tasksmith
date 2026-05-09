@@ -38,6 +38,20 @@ export interface CreateRunInput {
   adapter: RuntimeAdapter;
 }
 
+export interface RepositorySummary {
+  key: string;
+  displayName: string;
+  defaultBranch: string;
+  hasGitUrl: boolean;
+  gitProvider?: { type: "github"; owner: string; repo: string };
+  issueProvider?: { type: "github_issues" | "jira" };
+  hasVerificationProfile: boolean;
+}
+
+export interface PublicAppConfig {
+  repositories: RepositorySummary[];
+}
+
 export type NormalizedRunEvent =
   | { type: "run_status"; status: RunStatus; detail?: string }
   | {

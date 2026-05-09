@@ -47,6 +47,41 @@ export interface VerificationCommandConfig {
   timeoutMs: number;
 }
 
+export interface GitHubProviderConfig {
+  type: "github";
+  owner: string;
+  repo: string;
+  ghConfigDir?: string;
+}
+
+export type IssueProviderConfig =
+  | {
+      type: "github_issues";
+      labels?: string[];
+      state?: "open" | "closed" | "all";
+    }
+  | {
+      type: "jira";
+      projectKey?: string;
+      jql?: string;
+      repoLabel?: string;
+    };
+
+export interface RepositoryConfig {
+  displayName?: string;
+  gitUrl?: string;
+  defaultBranch?: string;
+  cloneDepth?: number;
+  gitSshCommand?: string;
+  gitProvider?: GitHubProviderConfig;
+  issueProvider?: IssueProviderConfig;
+  verify?: VerificationCommandConfig[];
+}
+
+export interface VerificationConfig {
+  defaultCommands: VerificationCommandConfig[];
+}
+
 export type NormalizedRunEvent =
   | { type: "run_status"; status: RunStatus; detail?: string }
   | { type: "user_message"; control: ControlKind; text: string; delivery: "received" | "forwarded" | "accepted" | "failed"; error?: string }
@@ -111,7 +146,8 @@ export interface AppConfig {
   stateDir: string;
   piAuthSourceDir: string;
   publicDir: string;
-  verificationCommands: VerificationCommandConfig[];
+  repositories: Record<string, RepositoryConfig>;
+  verification: VerificationConfig;
 }
 
 export interface RuntimeHandle {

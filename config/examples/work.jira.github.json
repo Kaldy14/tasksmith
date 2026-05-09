@@ -1,0 +1,36 @@
+{
+  "description": "Work TaskSmith instance: Jira is the intake source, GitHub uses a separate work account/profile. Copy to the work Hetzner server and set TASKSMITH_CONFIG_PATH.",
+  "defaultVerify": [
+    { "name": "typecheck", "command": "pnpm typecheck", "timeoutMs": 180000 },
+    { "name": "lint", "command": "pnpm lint", "timeoutMs": 180000 },
+    { "name": "test", "command": "pnpm test", "timeoutMs": 300000 }
+  ],
+  "repos": {
+    "vosime-admin": {
+      "displayName": "Vosime Admin",
+      "gitUrl": "git@github.com:YOUR_ORG/vosime-admin.git",
+      "defaultBranch": "main",
+      "gitSshCommand": "ssh -i /home/deploy/.ssh/github-work -o IdentitiesOnly=yes",
+      "gitProvider": { "type": "github", "owner": "YOUR_ORG", "repo": "vosime-admin", "ghConfigDir": "/home/deploy/.config/gh-work" },
+      "issueProvider": {
+        "type": "jira",
+        "projectKey": "VOS",
+        "jql": "project = VOS AND labels = ai-ready AND labels = repo:vosime-admin AND status = 'Ready for AI'",
+        "repoLabel": "repo:vosime-admin"
+      }
+    },
+    "core-hub": {
+      "displayName": "Core Hub",
+      "gitUrl": "git@github.com:YOUR_ORG/core-hub.git",
+      "defaultBranch": "main",
+      "gitSshCommand": "ssh -i /home/deploy/.ssh/github-work -o IdentitiesOnly=yes",
+      "gitProvider": { "type": "github", "owner": "YOUR_ORG", "repo": "core-hub", "ghConfigDir": "/home/deploy/.config/gh-work" },
+      "issueProvider": {
+        "type": "jira",
+        "projectKey": "VOS",
+        "jql": "project = VOS AND labels = ai-ready AND labels = repo:core-hub AND status = 'Ready for AI'",
+        "repoLabel": "repo:core-hub"
+      }
+    }
+  }
+}

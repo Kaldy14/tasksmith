@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { NormalizedRunEvent, RunPaths, RunRecord, VerificationCommandConfig } from "../domain/types.js";
+import type { NormalizedRunEvent, RepositoryConfig, RunPaths, RunRecord, VerificationCommandConfig, VerificationConfig } from "../domain/types.js";
 import { redactForStorage } from "../domain/redaction.js";
 
 interface CommandExecutionResult {
@@ -23,10 +23,14 @@ type VerifierEmitter = (event: NormalizedRunEvent) => Promise<void>;
 const MAX_CAPTURE_BYTES = 200_000;
 
 export class DeterministicVerifier {
-  constructor(private readonly commands: readonly VerificationCommandConfig[]) {}
+  constructor(
+    private readonly config: VerificationConfig,
+    private readonly repositories: Readonly<Record<string, RepositoryConfig>>,
+  ) {}
 
   async verify(run: RunRecord, paths: RunPaths, emit: VerifierEmitter): Promise<VerifierResult> {
-    if (this.commands.length === 0) {
+    const commands = this.commandsForRun(run);
+    if (commands.length === 0) {
       await emit({
         type: "verification",
         name: "none",
@@ -36,7 +40,7 @@ export class DeterministicVerifier {
       return { status: "skipped", summary: "No verification commands configured." };
     }
 
-    for (const command of this.commands) {
+    for (const command of commands) {
       await emit({
         type: "verification",
         name: command.name,
@@ -73,7 +77,12 @@ export class DeterministicVerifier {
       }
     }
 
-    return { status: "passed", summary: `${this.commands.length} verification command(s) passed.` };
+    return { status: "passed", summary: `${commands.length} verification command(s) passed.` };
+  }
+
+  private commandsForRun(run: RunRecord): readonly VerificationCommandConfig[] {
+    const repoConfig = this.repositories[run.repoKey];
+    return repoConfig?.verify ?? this.config.defaultCommands;
   }
 }
 

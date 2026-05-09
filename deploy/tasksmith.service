@@ -13,6 +13,7 @@ Environment=HOST=127.0.0.1
 Environment=PORT=3000
 Environment=TASKSMITH_DATA_DIR=/opt/tasksmith/data
 Environment=TASKSMITH_PI_AUTH_SOURCE=/home/deploy/.pi/agent
+Environment=TASKSMITH_CONFIG_PATH=/opt/tasksmith/config/repos.json
 Environment=PI_SKIP_VERSION_CHECK=1
 Environment=PI_TELEMETRY=0
 ExecStartPre=/usr/local/bin/pnpm build

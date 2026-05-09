@@ -1,4 +1,4 @@
-import type { ControlKind, CreateRunInput, RunRecord, StoredRunEvent } from "./types";
+import type { ControlKind, CreateRunInput, PublicAppConfig, RunRecord, StoredRunEvent } from "./types";
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -11,6 +11,10 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
     throw new Error(body.error ?? `HTTP ${response.status}`);
   }
   return body as T;
+}
+
+export async function getPublicConfig(): Promise<PublicAppConfig> {
+  return fetchJson<PublicAppConfig>("/api/config");
 }
 
 export async function listRuns(): Promise<RunRecord[]> {

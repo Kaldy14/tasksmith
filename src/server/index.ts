@@ -10,8 +10,8 @@ const store = new FileStore(config);
 await store.init();
 await store.markActiveRunsFailedOnBoot();
 const hub = new EventHub();
-const verifier = new DeterministicVerifier(config.verificationCommands);
-const runtime = new RuntimeManager(store, hub, verifier);
+const verifier = new DeterministicVerifier(config.verification, config.repositories);
+const runtime = new RuntimeManager(store, hub, verifier, config.repositories);
 const server = createTaskSmithServer({ config, store, runtime, hub });
 
 server.listen(config.port, config.host, () => {
