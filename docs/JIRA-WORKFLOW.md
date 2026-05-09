@@ -136,7 +136,7 @@ vosime-admin
 core-hub
 ```
 
-For the work instance, one Jira board can route to many repositories using `sourceFlow.jiraRepoRouting.labels`, e.g. `{ "vosime-admin": "vosime-admin", "core-hub": "core-hub" }`. If no repo is resolved, create Run in `waiting_for_user` and ask human to select.
+For Jira deployments, one Jira board can route to many repositories using `sourceFlow.jiraRepoRouting.labels`, e.g. `{ "vosime-admin": "vosime-admin", "core-hub": "core-hub" }`. If no repo is resolved, create Run in `waiting_for_user` and ask human to select.
 
 ## Prompt safety
 

@@ -72,7 +72,7 @@ or:
 { "deliveryMode": "squash_merge_main", "mergeTargetBranch": "main" }
 ```
 
-Work instances should use `draft_pr`. `squash_merge_main` is for trusted personal repos only and must remain explicit.
+`draft_pr` is the safe default. `squash_merge_main` is an explicit delivery mode for deployments/repos where direct merge is desired.
 
 ## Current implementation status
 

@@ -51,11 +51,15 @@ Agent sandbox must not receive:
 
 ## Sandboxing options
 
+### Dedicated-host MVP
+
+The current MVP runs directly on a dedicated TaskSmith server. This is acceptable for the initial deployment model because the whole host is assigned to TaskSmith, and stronger sandboxing is explicitly deferred.
+
 ### Docker
 
-Good MVP practicality. Risks if Docker socket is mounted into application container.
+Future hardening option. Risks if Docker socket is mounted into an application container.
 
-Avoid agent containers with broad host access. Prefer host-side worker that starts per-run containers with strict mounts.
+If/when needed, prefer host-side worker control of per-run containers with strict mounts.
 
 ### Rootless Podman
 

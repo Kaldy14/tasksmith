@@ -198,7 +198,7 @@ TaskSmith, not the agent, runs configured checks after implementation.
 
 **Status:** `[~]` Config foundation in progress
 **Type:** source integration  
-**Inspired by:** Kandev Jira JQL watches, GitHub Issues for the personal instance, but with external trackers kept as source of truth
+**Inspired by:** Kandev Jira JQL watches, GitHub Issues for repository-scoped intake, but with external trackers kept as source of truth
 
 ### Goal
 
@@ -224,7 +224,7 @@ A GitHub issue or Jira issue matching configured readiness criteria creates exac
 - [ ] Duplicate polling does not duplicate Run.
 - [ ] Jira receives Run link comment.
 - [ ] Jira status/labels reflect claimed/running/failed/pr-created.
-- [ ] Repo routing works for personal GitHub repos (`tasksmith`, `robodoggo`, `clui`) and work Jira repos (`vosime-admin`, `core-hub`).
+- [ ] Repo routing works for GitHub Issues repos (`tasksmith`, `robodoggo`, `clui`) and Jira-routed repos (`vosime-admin`, `core-hub`).
 
 ## M5 — PR creation
 
@@ -320,10 +320,10 @@ After PR creation, TaskSmith watches CI checks and performs bounded fix attempts
 
 ### Tasks
 
-- [ ] Add internal auth for UI/API.
+- [ ] Add Better Auth for UI/API before exposing a real public URL.
 - [ ] Add role/policy for who can steer/abort/rerun.
 - [ ] Implement secret redaction tests.
-- [ ] Review sandbox isolation.
+- [ ] Review stronger sandbox isolation as a future hardening improvement; MVP runs on a dedicated TaskSmith server.
 - [ ] Add resource limits and timeouts.
 - [ ] Add artifact retention policy.
 - [ ] Add DB backup plan.

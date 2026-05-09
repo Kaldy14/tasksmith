@@ -1,6 +1,6 @@
 # Configuration
 
-TaskSmith can run as separate personal and work instances by giving each server its own config file, auth material, and data directory.
+TaskSmith can run multiple deployments by giving each server its own config file, auth material, and data directory. The config is generic: choose GitHub Issues or Jira as a source per repository, define repository metadata, and choose delivery behavior per deployment or repo.
 
 ## Config file
 
@@ -47,7 +47,7 @@ Minimal shape:
 
 Configured repositories appear in the manual intake UI. When a Run uses a configured repository with `gitUrl`, TaskSmith clones it into the per-run workspace before starting Pi or the demo runtime.
 
-## Personal GitHub instance
+## GitHub Issues source example
 
 Use GitHub Issues as the intake source. The readiness label is `tasksmith`, not `ai-ready`. Start from:
 
@@ -77,7 +77,7 @@ Then add to the systemd unit:
 Environment=TASKSMITH_CONFIG_PATH=/opt/tasksmith/config/repos.json
 ```
 
-GitHub auth for private repositories should be configured for the `deploy` user. On the personal server, GitHub CLI is installed and the example config points at `/home/deploy/.config/gh-kaldy14`.
+GitHub auth for private repositories should be configured for the `deploy` user. The GitHub Issues example config points at `/home/deploy/.config/gh-kaldy14`.
 
 ```bash
 ssh tasksmith
@@ -89,9 +89,9 @@ GH_CONFIG_DIR=/home/deploy/.config/gh-kaldy14 gh auth status
 
 GitHub CLI login is intentionally manual: it avoids putting GitHub credentials into TaskSmith prompts, config files, or shell history. Public HTTPS clones do not need auth. Private HTTPS clones, GitHub Issues intake, and future PR creation do. Do not copy `ghConfigDir` auth directories into agent workspaces.
 
-## Work Jira instance
+## Jira source example
 
-Use a separate Hetzner server, a separate `deploy` user auth setup, and a separate config file. Start from:
+For Jira-backed deployments, use a separate config file and auth setup. Start from:
 
 ```txt
 config/examples/work.jira.github.json
@@ -126,7 +126,7 @@ Example routing:
 
 That means a Jira issue with labels `tasksmith` and `vosime-admin` routes to the `vosime-admin` repository. This mapping is per-instance configurable.
 
-For the work server, create a separate GitHub CLI profile and/or SSH key, for example:
+For a deployment that needs a different GitHub account, create a separate GitHub CLI profile and/or SSH key, for example:
 
 ```bash
 mkdir -p /home/deploy/.config/gh-work
@@ -162,7 +162,7 @@ or:
 { "workflow": { "deliveryMode": "squash_merge_main", "mergeTargetBranch": "main" } }
 ```
 
-MVP policy should default to `draft_pr`. `squash_merge_main` is only appropriate for a trusted personal instance and should remain disabled for work unless explicitly accepted.
+`draft_pr` is the safe default. `squash_merge_main` is an explicit delivery mode for deployments/repos where direct merge is desired.
 
 ## Verification precedence
 

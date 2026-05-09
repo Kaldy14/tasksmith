@@ -1,5 +1,5 @@
 {
-  "description": "Personal TaskSmith instance: GitHub Issues are the intake source. Copy to /opt/tasksmith/config/repos.json and set TASKSMITH_CONFIG_PATH to that path.",
+  "description": "GitHub Issues source example. Copy to /opt/tasksmith/config/repos.json and set TASKSMITH_CONFIG_PATH to that path.",
   "sourceFlow": {
     "readinessLabel": "tasksmith",
     "pollIntervalSeconds": 60,

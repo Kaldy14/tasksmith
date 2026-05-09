@@ -175,17 +175,17 @@ Browser e2e with `agent-browser` has been run against both the direct SSH tunnel
 /tmp/tasksmith-phase3-tailscale-ui.png
 ```
 
-After UI auth exists, we can decide whether to keep Tailscale-only access or also route Caddy/Nginx to the API/UI service and expose a public HTTPS URL.
+Before exposing TaskSmith on a real public URL, add Better Auth-backed UI/API authentication. Until then, keep access Tailscale-only or via SSH tunnel. After Better Auth exists, decide whether to keep Tailscale-only access or also route Caddy/Nginx to the API/UI service for public HTTPS.
 
 ## Docker status
 
-Docker is installed and still available for future sandboxing, but TaskSmith itself is currently running directly on the host. The previous Docker Compose TaskSmith container was stopped.
+Docker is installed and still available for future improvements, but TaskSmith itself is currently running directly on the dedicated host. The previous Docker Compose TaskSmith container was stopped.
 
-Docker will likely become useful later for per-run sandboxes, verifier isolation, or browser/e2e containers.
+Per-run container/restricted-user isolation is not required for the MVP because this server is dedicated to TaskSmith. It can be revisited later as a hardening improvement.
 
 ## Security notes
 
 - Keep Pi auth, Git deploy keys, Jira tokens, and Git provider tokens narrow.
 - Per-run Pi auth/session directories belong under `/opt/tasksmith/data/runs/<run-id>/`.
-- Never mount `/home/deploy` into agent sandboxes.
-- The UI is not exposed publicly until authentication is added.
+- Do not copy full `/home/deploy` into per-run workspaces.
+- The UI is not exposed publicly until Better Auth-backed authentication is added.
