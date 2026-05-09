@@ -9,7 +9,7 @@ This slice turns the Phase 1 Pi runtime contract into a browser-visible manual R
 ## What is included
 
 - Node/TypeScript HTTP server in `src/server`.
-- Static browser UI in `src/server/public`.
+- React/TanStack Router browser UI in `src/web`, built by Vite into `dist/web` for the Node server to serve.
 - File-backed Run and Event store under `TASKSMITH_DATA_DIR`.
 - Manual Run creation.
 - Runtime adapters:

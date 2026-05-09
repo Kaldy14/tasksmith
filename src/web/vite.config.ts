@@ -15,7 +15,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: path.resolve(here, "../server/public"),
+    outDir: path.resolve(here, "../../dist/web"),
     emptyOutDir: true,
     sourcemap: false,
   },

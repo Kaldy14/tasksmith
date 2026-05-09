@@ -97,6 +97,7 @@ From local machine:
 rsync -az --delete \
   --exclude .git \
   --exclude node_modules \
+  --exclude dist \
   --exclude .data \
   --exclude .env \
   --exclude '.env.*' \
@@ -111,7 +112,7 @@ cd /opt/tasksmith/app
 pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm typecheck:web
-pnpm build                  # produces src/server/public/{index.html,assets/*}
+pnpm build                  # produces dist/web/{index.html,assets/*}
 pnpm e2e:manual-run
 pnpm e2e:verifier
 pnpm e2e:source-pickup
@@ -123,7 +124,7 @@ sudo systemctl restart tasksmith
 curl -fsS http://127.0.0.1:3000/healthz
 ```
 
-The systemd unit also runs `pnpm build` in `ExecStartPre` as a deploy-safety net. Running it manually before restart is still recommended so asset or type errors are visible before service restart. The SPA is served as static files from `src/server/public/`.
+The systemd unit also runs `pnpm build` in `ExecStartPre` as a deploy-safety net. Running it manually before restart is still recommended so asset or type errors are visible before service restart. The SPA is served as generated static files from `dist/web/`. These files are build artifacts and are not tracked in git.
 
 Authenticated Pi e2e on the server requires first logging in with host Pi as `deploy`:
 
