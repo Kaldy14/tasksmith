@@ -127,8 +127,13 @@ export class RuntimeManager {
       await this.emit(runId, event);
     });
 
+    const latestAfterVerification = await this.store.getRun(runId);
+    if (!isRunEligibleForVerificationTransition(latestAfterVerification, run.currentAttemptId)) return;
+
     if (result.status === "failed") {
-      if (await this.startFixAttemptIfAllowed(run, result.summary)) return;
+      if (await this.startFixAttemptIfAllowed(latestAfterVerification, result.summary)) return;
+      const latestBeforeFailure = await this.store.getRun(runId);
+      if (!isRunEligibleForVerificationTransition(latestBeforeFailure, run.currentAttemptId)) return;
       await this.store.updateRun(runId, { status: "failed", error: `Verification failed: ${result.summary}`, finishedAt: new Date().toISOString() });
       await this.emit(runId, { type: "error", message: "Verification failed", detail: result.summary });
       await this.emit(runId, { type: "run_status", status: "failed", detail: result.summary });
@@ -139,23 +144,26 @@ export class RuntimeManager {
   }
 
   private async startFixAttemptIfAllowed(run: RunRecord, verifierSummary: string): Promise<boolean> {
-    const currentAttempt = parseAttemptNumber(run.currentAttemptId);
+    const latest = await this.store.getRun(run.id);
+    if (!isRunEligibleForVerificationTransition(latest, run.currentAttemptId)) return false;
+
+    const currentAttempt = parseAttemptNumber(latest.currentAttemptId);
     const completedFixAttempts = Math.max(0, currentAttempt - 1);
-    const maxFixAttempts = this.workflowForRun(run).maxFixAttempts;
+    const maxFixAttempts = this.workflowForRun(latest).maxFixAttempts;
     if (completedFixAttempts >= maxFixAttempts) return false;
 
     const nextAttempt = currentAttempt + 1;
     const fixPrompt = `Deterministic verification failed: ${verifierSummary}\n\nStart fix attempt ${completedFixAttempts + 1} of ${maxFixAttempts}. Make the smallest fix only, then stop. Do not create a pull request.`;
-    const updated = await this.store.updateRun(run.id, {
+    const updated = await this.store.updateRun(latest.id, {
       status: "fixing",
       currentAttemptId: `attempt-${nextAttempt}`,
-      prompt: `${run.prompt}\n\nTaskSmith verifier fix request:\n${fixPrompt}`,
+      prompt: `${latest.prompt}\n\nTaskSmith verifier fix request:\n${fixPrompt}`,
     });
-    await this.emit(run.id, { type: "error", message: "Verification failed; starting bounded fix attempt", detail: verifierSummary });
-    await this.emit(run.id, { type: "run_status", status: "fixing", detail: `Fix attempt ${completedFixAttempts + 1} of ${maxFixAttempts}: ${verifierSummary}` });
-    await this.emit(run.id, { type: "user_message", control: "follow_up", text: fixPrompt, delivery: "forwarded" });
+    await this.emit(latest.id, { type: "error", message: "Verification failed; starting bounded fix attempt", detail: verifierSummary });
+    await this.emit(latest.id, { type: "run_status", status: "fixing", detail: `Fix attempt ${completedFixAttempts + 1} of ${maxFixAttempts}: ${verifierSummary}` });
+    await this.emit(latest.id, { type: "user_message", control: "follow_up", text: fixPrompt, delivery: "forwarded" });
     setTimeout(() => {
-      void this.runAttempt(updated, this.store.pathsForRun(run.id), this.createSink(updated), { prepareWorkspace: false });
+      void this.runAttempt(updated, this.store.pathsForRun(latest.id), this.createSink(updated), { prepareWorkspace: false });
     }, 0).unref();
     return true;
   }
@@ -220,6 +228,16 @@ export class RuntimeManager {
     if (!run) throw new Error(`Run not found: ${runId}`);
     return run;
   }
+}
+
+function isRunEligibleForVerificationTransition(run: RunRecord | undefined, expectedAttemptId: string): run is RunRecord {
+  if (!run) return false;
+  if (run.currentAttemptId !== expectedAttemptId) return false;
+  return !isTerminalRunStatus(run.status);
+}
+
+function isTerminalRunStatus(status: RunRecord["status"]): boolean {
+  return status === "completed" || status === "pr_created" || status === "failed" || status === "cancelled";
 }
 
 function parseAttemptNumber(attemptId: string): number {
