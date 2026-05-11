@@ -6,6 +6,7 @@ export type RunStatus =
   | "verifying"
   | "fixing"
   | "reviewing"
+  | "watching_ci"
   | "delivering"
   | "creating_pr"
   | "pr_created"
@@ -193,6 +194,9 @@ export interface SingleTaskWorkflowConfig {
   type: "single_task_sandcastle";
   stages: ["plan", "implement", "deep_review", "fix", "deliver"];
   maxFixAttempts: number;
+  maxCiFixAttempts: number;
+  ciPollIntervalMs: number;
+  ciTimeoutMs: number;
   deliveryMode: DeliveryMode;
   mergeTargetBranch?: string;
 }
@@ -270,6 +274,15 @@ export type NormalizedRunEvent =
       number?: number;
       detail?: string;
       error?: string;
+    }
+  | {
+      type: "ci";
+      provider: "github";
+      status: "running" | "passed" | "failed" | "skipped";
+      summary: string;
+      attempt?: number;
+      detailsUrl?: string;
+      log?: string;
     }
   | { type: "error"; message: string; detail?: string }
   | { type: "attempt_done"; status: "completed" | "aborted" | "failed"; summary?: string };

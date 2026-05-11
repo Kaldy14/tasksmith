@@ -1,7 +1,8 @@
-import type { ControlKind, NormalizedRunEvent, RepositoryConfig, ReviewRecord, RunPaths, RunRecord, RuntimeHandle, SingleTaskWorkflowConfig, StoredRunEvent } from "../domain/types.js";
+import type { ControlKind, NormalizedRunEvent, PullRequestRecord, RepositoryConfig, ReviewRecord, RunPaths, RunRecord, RuntimeHandle, SingleTaskWorkflowConfig, StoredRunEvent } from "../domain/types.js";
 import type { FileStore } from "../storage/file-store.js";
 import type { EventHub } from "../server/event-hub.js";
 import type { PullRequestDelivery } from "../delivery/pull-request-delivery.js";
+import type { GitHubCiWatcher, CiWatchResult } from "../ci/github-ci-watcher.js";
 import type { FreshContextReviewer } from "../review/fresh-context-reviewer.js";
 import type { DeterministicVerifier } from "../verifier/deterministic-verifier.js";
 import { DemoRuntime, type RuntimeSink } from "./demo-adapter.js";
@@ -20,6 +21,7 @@ export class RuntimeManager {
     private readonly verifier: DeterministicVerifier,
     private readonly reviewer: FreshContextReviewer,
     private readonly delivery: PullRequestDelivery,
+    private readonly ciWatcher: GitHubCiWatcher,
     private readonly repositories: Readonly<Record<string, RepositoryConfig>>,
     private readonly globalWorkflow: SingleTaskWorkflowConfig,
   ) {
@@ -207,8 +209,7 @@ export class RuntimeManager {
         await this.emit(runId, event);
       });
       if (result.status === "created" && result.pullRequest) {
-        await this.store.updateRun(runId, { status: "pr_created", finishedAt: new Date().toISOString() });
-        await this.emit(runId, { type: "run_status", status: "pr_created", detail: result.summary });
+        await this.watchCiForCreatedPullRequest(runId, result.summary, result.pullRequest);
         return;
       }
       await this.store.updateRun(runId, { status: "completed", finishedAt: new Date().toISOString() });
@@ -219,6 +220,60 @@ export class RuntimeManager {
       await this.emit(runId, { type: "error", message: "Delivery failed", detail: message });
       await this.emit(runId, { type: "run_status", status: "failed", detail: message });
     }
+  }
+
+  private async watchCiForCreatedPullRequest(runId: string, deliverySummary: string, pullRequest: PullRequestRecord): Promise<void> {
+    const run = await this.requireRun(runId);
+    if (isTerminalRunStatus(run.status)) return;
+    await this.store.updateRun(runId, { status: "watching_ci" });
+    await this.emit(runId, { type: "run_status", status: "watching_ci", detail: "Polling PR CI checks" });
+
+    const ciResult = await this.ciWatcher.watchPullRequest(run, pullRequest, async (event) => {
+      await this.emit(runId, event);
+    });
+    const latest = await this.store.getRun(runId);
+    if (!latest || isTerminalRunStatus(latest.status)) return;
+
+    if (ciResult.status === "failed") {
+      if (await this.startCiFixAttemptIfAllowed(latest, ciResult)) return;
+      await this.store.updateRun(runId, { status: "failed", error: `CI failed: ${ciResult.summary}`, finishedAt: new Date().toISOString() });
+      await this.emit(runId, { type: "error", message: "CI failed", detail: ciResult.log ? `${ciResult.summary}\n\n${ciResult.log}` : ciResult.summary });
+      await this.emit(runId, { type: "run_status", status: "failed", detail: ciResult.summary });
+      return;
+    }
+
+    await this.store.updateRun(runId, { status: "pr_created", finishedAt: new Date().toISOString() });
+    await this.emit(runId, { type: "run_status", status: "pr_created", detail: `${deliverySummary} ${ciResult.summary}` });
+  }
+
+  private async startCiFixAttemptIfAllowed(run: RunRecord, ciResult: CiWatchResult): Promise<boolean> {
+    const latest = await this.store.getRun(run.id);
+    if (!latest || isTerminalRunStatus(latest.status)) return false;
+
+    const currentAttempt = parseAttemptNumber(latest.currentAttemptId);
+    const completedFixAttempts = Math.max(0, currentAttempt - 1);
+    const maxFixAttempts = this.workflowForRun(latest).maxCiFixAttempts;
+    if (completedFixAttempts >= maxFixAttempts) return false;
+
+    const nextAttempt = currentAttempt + 1;
+    const fixPrompt = [
+      `GitHub CI failed: ${ciResult.summary}`,
+      "",
+      `Start CI fix attempt ${completedFixAttempts + 1} of ${maxFixAttempts}. Make the smallest fix only, then stop. Do not create or merge a pull request.`,
+      ciResult.log ? `\nFailed CI log excerpt:\n${ciResult.log}` : "",
+    ].join("\n");
+    const updated = await this.store.updateRun(latest.id, {
+      status: "fixing",
+      currentAttemptId: `attempt-${nextAttempt}`,
+      prompt: `${latest.prompt}\n\nTaskSmith CI fix request:\n${fixPrompt}`,
+    });
+    await this.emit(latest.id, { type: "error", message: "CI failed; starting bounded fix attempt", detail: ciResult.summary });
+    await this.emit(latest.id, { type: "run_status", status: "fixing", detail: `CI fix attempt ${completedFixAttempts + 1} of ${maxFixAttempts}: ${ciResult.summary}` });
+    await this.emit(latest.id, { type: "user_message", control: "follow_up", text: fixPrompt, delivery: "forwarded" });
+    setTimeout(() => {
+      void this.runAttempt(updated, this.store.pathsForRun(latest.id), this.createSink(updated), { prepareWorkspace: false });
+    }, 0).unref();
+    return true;
   }
 
   private async emit(runId: string, event: NormalizedRunEvent): Promise<StoredRunEvent> {

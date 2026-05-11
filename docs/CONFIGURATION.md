@@ -25,6 +25,9 @@ Minimal shape:
     "type": "single_task_sandcastle",
     "stages": ["plan", "implement", "deep_review", "fix", "deliver"],
     "maxFixAttempts": 1,
+    "maxCiFixAttempts": 1,
+    "ciPollIntervalMs": 30000,
+    "ciTimeoutMs": 900000,
     "deliveryMode": "ready_pr"
   },
   "defaultVerify": [
@@ -308,6 +311,8 @@ If deterministic verification fails, TaskSmith checks `repos.<repoKey>.workflow.
 After verification passes, TaskSmith runs a fresh-context diff review before delivery. The current reviewer is a deterministic guardrail pass over the final workspace diff: it persists `review-diff.patch` and `review-diff-stat.txt`, emits structured findings, and blocks delivery on `high` or `critical` findings such as secret-looking values or local env/dependency files. Review metadata is stored in `state/reviews.json` and exposed at `GET /api/reviews` and `GET /api/runs/:id/review`.
 
 If verification and review pass in `ready_pr` mode, TaskSmith checks for a non-empty diff, creates a branch named `tasksmith/<source-or-title>-<run-suffix>`, commits all workspace changes with the TaskSmith bot identity, pushes the branch, and runs `gh pr create` without `--draft`. PR metadata is stored in `state/pull-requests.json` and exposed at `GET /api/pull-requests`. Source issues receive a PR-link comment when credentials are available.
+
+After PR creation, TaskSmith polls GitHub checks with `gh pr checks`. Passing checks, skipped/no checks, or absence of checks complete the Run as `pr_created`. Failed checks fetch failed GitHub Actions logs with `gh run view --log-failed`, start a bounded CI fix attempt, rerun verification/review, push a fix commit to the existing PR branch, and poll checks again. `maxCiFixAttempts` controls this retry loop; `ciPollIntervalMs` and `ciTimeoutMs` control polling cadence and timeout.
 
 If verification and review pass in `squash_merge_main` mode, TaskSmith checks for a non-empty diff, commits all workspace changes as one TaskSmith commit, and pushes `HEAD` to `refs/heads/<mergeTargetBranch>` without force. The Run completes with a delivery event containing the target branch and commit URL/SHA. Source issues receive a direct-merge comment when credentials are available.
 

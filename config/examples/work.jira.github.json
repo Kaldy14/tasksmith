@@ -21,6 +21,9 @@
       "deliver"
     ],
     "maxFixAttempts": 1,
+    "maxCiFixAttempts": 1,
+    "ciPollIntervalMs": 30000,
+    "ciTimeoutMs": 900000,
     "deliveryMode": "ready_pr"
   },
   "defaultVerify": [

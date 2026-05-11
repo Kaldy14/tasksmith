@@ -33,13 +33,14 @@ async function main(): Promise<void> {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "tasksmith-delivery-e2e-"));
   const binDir = path.join(tempDir, "bin");
   const ghLogPath = path.join(tempDir, "gh-calls.jsonl");
+  const ghStatePath = path.join(tempDir, "gh-state.json");
   const remoteRepoDir = path.join(tempDir, "remote.git");
   const squashRemoteRepoDir = path.join(tempDir, "squash-remote.git");
   const configPath = path.join(tempDir, "tasksmith-config.json");
   const port = 36_210 + Math.floor(Math.random() * 1000);
 
   await mkdir(binDir, { recursive: true });
-  await writeFakeGh(path.join(binDir, "gh"), ghLogPath);
+  await writeFakeGh(path.join(binDir, "gh"), ghLogPath, ghStatePath);
   await createBareFixtureRemote(tempDir, remoteRepoDir);
   await createBareFixtureRemote(tempDir, squashRemoteRepoDir);
   await writeFile(configPath, JSON.stringify(buildConfig(pathToFileURL(remoteRepoDir).href, pathToFileURL(squashRemoteRepoDir).href), null, 2), "utf8");
@@ -71,10 +72,10 @@ async function main(): Promise<void> {
       title: "Delivery ready PR e2e",
       repoKey: "delivery-e2e",
       adapter: "demo",
-      prompt: "TASKSMITH_DEMO_WRITE_CHANGE Produce a deterministic change for PR creation.",
+      prompt: "TASKSMITH_DEMO_WRITE_CHANGE TASKSMITH_DEMO_FIX_CI Produce a deterministic change for PR creation and CI fixup.",
     });
 
-    const completed = await waitForRunStatus(baseUrl, created.run.id, "pr_created", 30_000);
+    const completed = await waitForRunStatus(baseUrl, created.run.id, "pr_created", 60_000);
     assert(completed.run.pullRequest !== undefined, "run should include pull request summary");
     assertEqual(completed.run.pullRequest.url, "https://github.com/octo/delivery-fixture/pull/123", "pull request url");
     assertEqual(completed.run.pullRequest.number, 123, "pull request number");
@@ -88,12 +89,16 @@ async function main(): Promise<void> {
     assert(pr.body.includes("Human review is required"), "PR body should require human review");
 
     await assertRemoteBranchContainsChange(remoteRepoDir, pr.branch, tempDir);
+    await assertRemoteBranchContainsCiFix(remoteRepoDir, pr.branch, tempDir);
 
     const events = await getJson<EventsResponse>(`${baseUrl}/api/runs/${created.run.id}/events`);
     const eventText = JSON.stringify(events);
     assert(eventText.includes('"type":"delivery"'), "events should include delivery events");
     assert(eventText.includes('"status":"created"'), "events should include created delivery status");
     assert(eventText.includes("gh pr create"), "events should include gh pr create command");
+    assert(eventText.includes('"type":"ci"'), "events should include CI polling events");
+    assert(eventText.includes("CI fix attempt"), "events should include CI fix attempt status");
+    assert(eventText.includes("Updated existing PR branch"), "events should include existing PR branch update");
 
     const squashCreated = await postJson<RunResponse>(`${baseUrl}/api/runs`, {
       title: "Delivery squash merge e2e",
@@ -113,6 +118,8 @@ async function main(): Promise<void> {
 
     const ghLog = await readFile(ghLogPath, "utf8");
     assert(countOccurrences(ghLog, '"pr","create"') === 1, "gh pr create should only be called for ready_pr delivery");
+    assert(countOccurrences(ghLog, '"pr","checks"') >= 2, "gh pr checks should be polled before and after CI fix");
+    assert(ghLog.includes('"run","view"'), "failed CI logs should be fetched");
     assert(!ghLog.includes('"--draft"'), "gh pr create must not use --draft");
     assert(ghLog.includes("ready-to-review"), "gh pr create body should say ready-to-review");
 
@@ -137,6 +144,9 @@ function buildConfig(remoteUrl: string, squashRemoteUrl: string): unknown {
       type: "single_task_sandcastle",
       stages: ["plan", "implement", "deep_review", "fix", "deliver"],
       maxFixAttempts: 1,
+      maxCiFixAttempts: 1,
+      ciPollIntervalMs: 250,
+      ciTimeoutMs: 20_000,
       deliveryMode: "ready_pr",
     },
     repos: {
@@ -177,10 +187,15 @@ function buildConfig(remoteUrl: string, squashRemoteUrl: string): unknown {
   };
 }
 
-async function writeFakeGh(filePath: string, logPath: string): Promise<void> {
+async function writeFakeGh(filePath: string, logPath: string, statePath: string): Promise<void> {
   const script = `#!/usr/bin/env node
 const fs = require('node:fs');
 const args = process.argv.slice(2);
+const statePath = ${JSON.stringify(statePath)};
+function readState() {
+  try { return JSON.parse(fs.readFileSync(statePath, 'utf8')); } catch { return { checks: 0 }; }
+}
+function writeState(state) { fs.writeFileSync(statePath, JSON.stringify(state)); }
 fs.appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args }) + '\\n');
 if (args.includes('--draft')) {
   console.error('ready PR expected, got --draft');
@@ -188,6 +203,21 @@ if (args.includes('--draft')) {
 }
 if (args[0] === 'pr' && args[1] === 'create') {
   console.log('https://github.com/octo/delivery-fixture/pull/123');
+  process.exit(0);
+}
+if (args[0] === 'pr' && args[1] === 'checks') {
+  const state = readState();
+  state.checks = (state.checks || 0) + 1;
+  writeState(state);
+  if (state.checks === 1) {
+    console.log(JSON.stringify([{ name: 'ci / test', bucket: 'fail', state: 'completed', conclusion: 'failure', detailsUrl: 'https://github.com/octo/delivery-fixture/actions/runs/987' }]));
+    process.exit(1);
+  }
+  console.log(JSON.stringify([{ name: 'ci / test', bucket: 'pass', state: 'completed', conclusion: 'success', detailsUrl: 'https://github.com/octo/delivery-fixture/actions/runs/988' }]));
+  process.exit(0);
+}
+if (args[0] === 'run' && args[1] === 'view') {
+  console.log('ci / test failed because TASKSMITH_DEMO_CI_FIXED.txt was missing');
   process.exit(0);
 }
 console.error('unexpected gh args: ' + args.join(' '));
@@ -214,6 +244,13 @@ async function assertRemoteBranchContainsChange(remoteRepoDir: string, branch: s
   await runGit(["clone", "--branch", branch, remoteRepoDir, cloneDir], tempDir);
   const change = await readFile(path.join(cloneDir, "TASKSMITH_DEMO_CHANGE.txt"), "utf8");
   assert(change.includes("Demo change created"), "remote PR branch should contain demo change");
+}
+
+async function assertRemoteBranchContainsCiFix(remoteRepoDir: string, branch: string, tempDir: string): Promise<void> {
+  const cloneDir = path.join(tempDir, "assert-ci-fix-clone");
+  await runGit(["clone", "--branch", branch, remoteRepoDir, cloneDir], tempDir);
+  const change = await readFile(path.join(cloneDir, "TASKSMITH_DEMO_CI_FIXED.txt"), "utf8");
+  assert(change.includes("Demo CI fix created"), "remote PR branch should contain CI fix commit");
 }
 
 async function runGit(args: readonly string[], cwd: string): Promise<void> {

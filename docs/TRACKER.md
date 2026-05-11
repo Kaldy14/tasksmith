@@ -296,7 +296,7 @@ A separate review pass checks the final diff before PR is marked ready.
 
 ## M7 — CI fixup
 
-**Status:** `[ ]` Not started  
+**Status:** `[~]` GitHub polling/fixup foundation implemented  
 **Type:** post-PR automation  
 **Inspired by:** Kandev CI Fixup phase, CodeForge webhook concepts
 
@@ -306,20 +306,20 @@ After PR creation, TaskSmith watches CI checks and performs bounded fix attempts
 
 ### Tasks
 
-- [ ] Poll PR CI status.
-- [ ] Fetch failed check logs.
-- [ ] Summarize relevant failure output.
-- [ ] Create CI fixup attempt in same workspace/branch.
-- [ ] Push new commit.
-- [ ] Re-poll CI.
-- [ ] Stop after max attempts.
-- [ ] Update Jira and UI on success/failure.
+- [x] Poll GitHub PR check status after ready PR creation.
+- [x] Fetch failed GitHub Actions logs via `gh run view --log-failed` when run ids are available.
+- [x] Summarize relevant failure output into a CI fix prompt.
+- [x] Create CI fixup attempt in same workspace/branch.
+- [x] Push new fix commit to the existing PR branch.
+- [x] Re-poll CI after the fix commit.
+- [x] Stop after `maxCiFixAttempts` is exhausted.
+- [~] Update Jira/GitHub/UI on success/failure: UI events exist; source comments/status transitions still need production hardening.
 
 ### Exit gate
 
-- [ ] Failed CI produces one bounded fix attempt.
-- [ ] Passing CI updates Run and Jira.
-- [ ] Repeated failures stop safely with clear report.
+- [x] Failed CI produces one bounded fix attempt in delivery e2e.
+- [~] Passing CI updates Run/UI; Jira status transition remains pending.
+- [x] Repeated failures stop safely with clear report when attempts are exhausted.
 
 ## M8 — Hardening and internal beta
 

@@ -193,6 +193,9 @@ function parseWorkflow(value: unknown, label: string): SingleTaskWorkflowConfig 
     type: "single_task_sandcastle",
     stages: parseWorkflowStages(record.stages, `${label}.stages`),
     maxFixAttempts: record.maxFixAttempts === undefined ? 1 : parseFixAttempts(record.maxFixAttempts, `${label}.maxFixAttempts`),
+    maxCiFixAttempts: record.maxCiFixAttempts === undefined ? 1 : parseFixAttempts(record.maxCiFixAttempts, `${label}.maxCiFixAttempts`),
+    ciPollIntervalMs: record.ciPollIntervalMs === undefined ? 30_000 : parseCiPollInterval(record.ciPollIntervalMs, `${label}.ciPollIntervalMs`),
+    ciTimeoutMs: record.ciTimeoutMs === undefined ? 900_000 : parseCiTimeout(record.ciTimeoutMs, `${label}.ciTimeoutMs`),
     deliveryMode: record.deliveryMode === undefined ? "ready_pr" : parseDeliveryMode(record.deliveryMode, `${label}.deliveryMode`),
   };
   assignOptionalString(workflow, "mergeTargetBranch", record.mergeTargetBranch, `${label}.mergeTargetBranch`, 160);
@@ -229,6 +232,9 @@ function defaultWorkflow(): SingleTaskWorkflowConfig {
     type: "single_task_sandcastle",
     stages: ["plan", "implement", "deep_review", "fix", "deliver"],
     maxFixAttempts: 1,
+    maxCiFixAttempts: 1,
+    ciPollIntervalMs: 30_000,
+    ciTimeoutMs: 900_000,
     deliveryMode: "ready_pr",
   };
 }
@@ -339,6 +345,20 @@ function parseCloneDepth(value: unknown, label: string): number {
 function parseTimeout(value: unknown, label: string): number {
   if (typeof value !== "number" || !Number.isInteger(value) || value <= 0 || value > 3_600_000) {
     throw new Error(`${label} must be an integer between 1 and 3600000`);
+  }
+  return value;
+}
+
+function parseCiPollInterval(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 250 || value > 300_000) {
+    throw new Error(`${label} must be an integer between 250 and 300000`);
+  }
+  return value;
+}
+
+function parseCiTimeout(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1_000 || value > 86_400_000) {
+    throw new Error(`${label} must be an integer between 1000 and 86400000`);
   }
   return value;
 }

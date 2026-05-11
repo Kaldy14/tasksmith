@@ -281,7 +281,7 @@ function publicRepositories(repositories: Readonly<Record<string, RepositoryConf
       hasGitUrl: Boolean(repo.gitUrl),
       gitProvider: repo.gitProvider ? { type: repo.gitProvider.type, owner: repo.gitProvider.owner, repo: repo.gitProvider.repo } : undefined,
       issueProvider: repo.issueProvider ? { type: repo.issueProvider.type } : undefined,
-      workflow: repo.workflow ? { deliveryMode: repo.workflow.deliveryMode, maxFixAttempts: repo.workflow.maxFixAttempts } : undefined,
+      workflow: repo.workflow ? { deliveryMode: repo.workflow.deliveryMode, maxFixAttempts: repo.workflow.maxFixAttempts, maxCiFixAttempts: repo.workflow.maxCiFixAttempts } : undefined,
       initCommandCount: repo.initCommands?.length ?? 0,
       hasVerificationProfile: repo.verify !== undefined,
     }))

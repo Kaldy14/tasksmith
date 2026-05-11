@@ -6,6 +6,7 @@ export type RunStatus =
   | "verifying"
   | "fixing"
   | "reviewing"
+  | "watching_ci"
   | "delivering"
   | "creating_pr"
   | "pr_created"
@@ -84,7 +85,7 @@ export interface RepositorySummary {
   hasGitUrl: boolean;
   gitProvider?: { type: "github"; owner: string; repo: string };
   issueProvider?: { type: "github_issues" | "jira" };
-  workflow?: { deliveryMode: "ready_pr" | "squash_merge_main"; maxFixAttempts: number };
+  workflow?: { deliveryMode: "ready_pr" | "squash_merge_main"; maxFixAttempts: number; maxCiFixAttempts: number };
   initCommandCount: number;
   hasVerificationProfile: boolean;
 }
@@ -107,6 +108,9 @@ export interface PublicAppConfig {
     type: "single_task_sandcastle";
     stages: ["plan", "implement", "deep_review", "fix", "deliver"];
     maxFixAttempts: number;
+    maxCiFixAttempts: number;
+    ciPollIntervalMs: number;
+    ciTimeoutMs: number;
     deliveryMode: "ready_pr" | "squash_merge_main";
     mergeTargetBranch?: string;
   };
@@ -173,6 +177,15 @@ export type NormalizedRunEvent =
       number?: number;
       detail?: string;
       error?: string;
+    }
+  | {
+      type: "ci";
+      provider: "github";
+      status: "running" | "passed" | "failed" | "skipped";
+      summary: string;
+      attempt?: number;
+      detailsUrl?: string;
+      log?: string;
     }
   | { type: "error"; message: string; detail?: string }
   | { type: "attempt_done"; status: "completed" | "aborted" | "failed"; summary?: string };
