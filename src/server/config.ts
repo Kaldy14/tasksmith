@@ -358,7 +358,7 @@ function parseAuthConfig(databaseUrl: string | undefined, host: string, port: st
     enabled,
     ...(secret ? { secret } : {}),
     baseUrl: baseUrl.replace(/\/$/, ""),
-    trustedOrigins: parseTrustedOrigins(baseUrl, process.env.TASKSMITH_AUTH_TRUSTED_ORIGINS),
+    trustedOrigins: parseTrustedOrigins(baseUrl, process.env.TASKSMITH_AUTH_TRUSTED_ORIGINS, host, port),
   };
 }
 
@@ -366,11 +366,11 @@ function parseBooleanEnv(value: string | undefined): boolean {
   return value === "1" || value === "true" || value === "yes";
 }
 
-function parseTrustedOrigins(baseUrl: string, raw: string | undefined): string[] {
+function parseTrustedOrigins(baseUrl: string, raw: string | undefined, host: string, port: string): string[] {
   const origins = new Set<string>();
   origins.add(originOf(baseUrl));
-  origins.add("http://127.0.0.1:3000");
-  origins.add("http://localhost:3000");
+  origins.add(originOf(parsePublicBaseUrl(undefined, host, port)));
+  origins.add(originOf(parsePublicBaseUrl(undefined, "localhost", port)));
   for (const entry of raw?.split(",") ?? []) {
     const trimmed = entry.trim().replace(/\/$/, "");
     if (trimmed) origins.add(trimmed);
