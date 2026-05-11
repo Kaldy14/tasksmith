@@ -119,7 +119,8 @@ Default delivery policy:
 - include verification summary,
 - include AI-generated marker,
 - include run link,
-- require human review before merge.
+- require human review before merge,
+- poll PR CI and keep fix attempts bounded by `maxCiFixAttempts`.
 
 Explicit `squash_merge_main` policy:
 

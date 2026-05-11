@@ -26,6 +26,7 @@ const TYPE_LABEL: Record<string, string> = {
   verification: "Verification",
   review: "Review",
   delivery: "Delivery",
+  ci: "CI",
   error: "Error",
   attempt_done: "Attempt done",
 };
@@ -63,6 +64,8 @@ function summarize(event: StoredRunEvent): string {
       return formatReview(data);
     case "delivery":
       return formatDelivery(data);
+    case "ci":
+      return formatCi(data);
     case "error":
       return `${data.message}${data.detail ? `\n${data.detail}` : ""}`;
     case "attempt_done":
@@ -83,6 +86,8 @@ type VerificationEvent = Extract<StoredRunEvent["data"], { type: "verification" 
 type ReviewEvent = Extract<StoredRunEvent["data"], { type: "review" }>;
 
 type DeliveryEvent = Extract<StoredRunEvent["data"], { type: "delivery" }>;
+
+type CiEvent = Extract<StoredRunEvent["data"], { type: "ci" }>;
 
 function formatVerification(data: VerificationEvent): string {
   const lines = [`${data.name}: ${data.status}`, `$ ${data.command}`];
@@ -121,6 +126,14 @@ function formatDelivery(data: DeliveryEvent): string {
   return lines.join("\n");
 }
 
+function formatCi(data: CiEvent): string {
+  const lines = [`${data.provider}: ${data.status}`, data.summary];
+  if (data.attempt !== undefined) lines.push(`poll=${data.attempt}`);
+  if (data.detailsUrl) lines.push(`details=${data.detailsUrl}`);
+  if (data.log) lines.push(`failed log:\n${data.log}`);
+  return lines.join("\n");
+}
+
 function formatEventTime(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
@@ -144,13 +157,14 @@ function isWorkEvent(type: string): boolean {
     type === "session_state" ||
     type === "verification" ||
     type === "review" ||
-    type === "delivery"
+    type === "delivery" ||
+    type === "ci"
   );
 }
 
 function workToneClass(type: string): string {
   if (type === "tool_result") return "text-jade";
-  if (type === "verification" || type === "review" || type === "delivery") return "text-jade";
+  if (type === "verification" || type === "review" || type === "delivery" || type === "ci") return "text-jade";
   if (type === "command" || type === "command_output") return "text-copper";
   return "text-muted-foreground/75";
 }

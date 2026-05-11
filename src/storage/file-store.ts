@@ -113,6 +113,7 @@ export class FileStore {
       ...(input.claimKey ? { claimKey: input.claimKey } : {}),
       status: "queued",
       currentAttemptId: "attempt-1",
+      ciFixAttempts: 0,
       runDir: paths.runDir,
       workspaceDir: paths.workspaceDir,
       createdAt: now,

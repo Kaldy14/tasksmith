@@ -37,6 +37,7 @@ export class DemoRuntime implements RuntimeHandle {
       await this.sink.emit({ type: "command_output", command: "printf demo-verifier-placeholder", output: "demo-verifier-placeholder\n", toolCallId: "demo-command" });
       await this.maybeWriteDemoChange();
       await this.maybeWriteVerifierFixDemoChange();
+      await this.maybeWriteCiFixDemoChange();
       await this.maybeWriteSecretDemoChange();
       await this.flushSteering();
       await this.flushFollowUps();
@@ -91,6 +92,15 @@ export class DemoRuntime implements RuntimeHandle {
     await writeFile(filePath, `Demo verifier fix created by ${this.run.currentAttemptId}\n`, "utf8");
     await this.sink.emit({ type: "command", command: "write TASKSMITH_DEMO_VERIFIER_FIXED.txt", toolCallId: "demo-write-verifier-fix" });
     await this.sink.emit({ type: "command_output", command: "write TASKSMITH_DEMO_VERIFIER_FIXED.txt", output: "TASKSMITH_DEMO_VERIFIER_FIXED.txt\n", toolCallId: "demo-write-verifier-fix" });
+  }
+
+  private async maybeWriteCiFixDemoChange(): Promise<void> {
+    if (!this.paths || !this.run.prompt.includes("TASKSMITH_DEMO_FIX_CI") || (this.run.ciFixAttempts ?? 0) <= 0) return;
+    const filePath = path.join(this.paths.workspaceDir, "TASKSMITH_DEMO_CI_FIXED.txt");
+    await mkdir(path.dirname(filePath), { recursive: true });
+    await writeFile(filePath, `Demo CI fix created by ${this.run.currentAttemptId}\n`, "utf8");
+    await this.sink.emit({ type: "command", command: "write TASKSMITH_DEMO_CI_FIXED.txt", toolCallId: "demo-write-ci-fix" });
+    await this.sink.emit({ type: "command_output", command: "write TASKSMITH_DEMO_CI_FIXED.txt", output: "TASKSMITH_DEMO_CI_FIXED.txt\n", toolCallId: "demo-write-ci-fix" });
   }
 
   private async maybeWriteSecretDemoChange(): Promise<void> {

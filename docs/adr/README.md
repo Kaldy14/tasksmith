@@ -11,6 +11,7 @@ ADRs capture decisions that should not depend on chat history.
 - [0005: Use Postgres for TaskSmith app state and keep Pi transcripts/artifacts on disk](./0005-postgres-for-metadata-files-for-artifacts.md)
 - [0006: Use Better Auth for TaskSmith UI/API sessions](./0006-better-auth-for-ui-api-sessions.md)
 - [0007: Support explicit squash-merge delivery to main](./0007-explicit-squash-merge-delivery.md)
+- [0008: Poll GitHub CI and run bounded fixup after PR creation](./0008-github-ci-fixup-after-pr-creation.md)
 
 ## Template
 

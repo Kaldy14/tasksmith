@@ -13,6 +13,7 @@ Jira
   -> Verifier
   -> Reviewer
   -> PR Creator
+  -> CI Watcher/Fixup
   -> Jira Updater
 ```
 
@@ -35,9 +36,10 @@ TaskSmith should be built around **Runs** and **Events**, not around raw agent p
 12. If checks fail, worker starts a fix attempt with logs.
 13. Reviewer performs fresh-context diff review.
 14. Orchestrator enters delivery only after verification and review pass and the Run is not terminal/cancelled.
-15. For `ready_pr`, PR Creator must push a TaskSmith branch, open a ready-to-review PR, persist PR metadata, and transition the Run to `pr_created`.
-16. For explicit `squash_merge_main`, delivery must create one TaskSmith commit, push it without force to the configured target branch, emit the commit URL/SHA, and transition the Run to `completed`.
-17. Jira/GitHub updater comments/transitions the source issue when credentials are available.
+15. For `ready_pr`, PR Creator must push a TaskSmith branch, open a ready-to-review PR, persist PR metadata, and enter CI watching.
+16. CI Watcher must poll GitHub checks for the PR. Passing or absent checks result in `pr_created`; failed checks produce a bounded CI fix attempt with failed log context, then update the existing PR branch and poll again.
+17. For explicit `squash_merge_main`, delivery must create one TaskSmith commit, push it without force to the configured target branch, emit the commit URL/SHA, and transition the Run to `completed`.
+18. Jira/GitHub updater comments/transitions the source issue when credentials are available.
 ```
 
 ## Component diagram
@@ -149,6 +151,16 @@ Responsibilities:
 - create ready-to-review PR/MR,
 - attach verification/review summary.
 
+### CI Watcher/Fixup
+
+Responsibilities:
+
+- poll GitHub PR checks after ready-PR delivery,
+- fetch failed GitHub Actions logs when checks fail,
+- create bounded CI fix attempts with failed log context,
+- push fix commits to the existing PR branch,
+- stop safely when CI passes, is absent, times out, or exhausts configured attempts.
+
 ### Jira Updater
 
 Responsibilities:
@@ -172,6 +184,7 @@ waiting_for_user
 verifying
 fixing
 reviewing
+watching_ci
 delivering
 creating_pr
 pr_created

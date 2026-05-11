@@ -68,6 +68,29 @@ export class PullRequestDelivery {
 
     const existing = await this.store.getPullRequestForRun(run.id);
     if (existing) {
+      const changedFiles = parseChangedFiles((await runGit(["status", "--porcelain=v1", "--untracked-files=all"], paths.workspaceDir, repo)).stdout);
+      if (changedFiles.length > 0) {
+        await emit({ type: "delivery", mode: workflow.deliveryMode, status: "running", provider: "github", branch: existing.branch, url: existing.url, detail: "Updating existing PR branch" });
+        await emitCommand(emit, "git add -A", runGit(["add", "-A"], paths.workspaceDir, repo));
+        await emitCommand(
+          emit,
+          `git commit -m ${JSON.stringify(fixCommitSubject(run))}`,
+          runGit(["-c", "user.name=TaskSmith", "-c", "user.email=tasksmith@example.invalid", "commit", "-m", fixCommitSubject(run)], paths.workspaceDir, repo),
+        );
+        await emitCommand(emit, `git push origin HEAD:refs/heads/${existing.branch}`, runGit(["push", "origin", `HEAD:refs/heads/${existing.branch}`], paths.workspaceDir, repo));
+        const summary = `Updated existing PR branch: ${existing.url}`;
+        await emit({
+          type: "delivery",
+          mode: workflow.deliveryMode,
+          status: "created",
+          provider: existing.provider,
+          branch: existing.branch,
+          url: existing.url,
+          ...(existing.number === undefined ? {} : { number: existing.number }),
+          detail: summary,
+        });
+        return { status: "created", summary, pullRequest: existing };
+      }
       const summary = `Pull request already recorded: ${existing.url}`;
       await emit({
         type: "delivery",
@@ -333,6 +356,11 @@ function isCommitSha(value: string): boolean {
 function commitSubject(run: RunRecord): string {
   const source = run.source?.key ?? run.title;
   return `TaskSmith: ${source}`.slice(0, 100);
+}
+
+function fixCommitSubject(run: RunRecord): string {
+  const source = run.source?.key ?? run.title;
+  return `TaskSmith fix: ${source}`.slice(0, 100);
 }
 
 function buildPullRequestBody(run: RunRecord, changedFiles: readonly string[], review: ReviewRecord, publicBaseUrl: string): string {

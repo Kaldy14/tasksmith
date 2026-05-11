@@ -193,6 +193,10 @@ if (args[0] === 'pr' && args[1] === 'create') {
   console.log('https://github.com/octo/review-fixture/pull/456');
   process.exit(0);
 }
+if (args[0] === 'pr' && args[1] === 'checks') {
+  console.log(JSON.stringify([{ name: 'ci / review-e2e', bucket: 'pass', state: 'completed', conclusion: 'success' }]));
+  process.exit(0);
+}
 console.error('unexpected gh args: ' + args.join(' '));
 process.exit(2);
 `;
