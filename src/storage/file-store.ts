@@ -114,6 +114,7 @@ export class FileStore {
       status: "queued",
       currentAttemptId: "attempt-1",
       ciFixAttempts: 0,
+      reviewFixAttempts: 0,
       runDir: paths.runDir,
       workspaceDir: paths.workspaceDir,
       createdAt: now,

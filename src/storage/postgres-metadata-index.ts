@@ -298,6 +298,13 @@ const migrations: readonly Migration[] = [
       sql`ALTER TABLE tasksmith_runs ADD COLUMN IF NOT EXISTS ci_fix_attempts integer NOT NULL DEFAULT 0`,
     ],
   },
+  {
+    version: 6,
+    name: "review_fix_attempt_counter",
+    statements: [
+      sql`ALTER TABLE tasksmith_runs ADD COLUMN IF NOT EXISTS review_fix_attempts integer NOT NULL DEFAULT 0`,
+    ],
+  },
 ];
 
 export class PostgresMetadataIndex {
@@ -614,6 +621,7 @@ function runToInsert(run: RunRecord, paths: RunPaths): typeof runs.$inferInsert 
     status: run.status,
     currentAttemptId: run.currentAttemptId,
     ciFixAttempts: run.ciFixAttempts,
+    reviewFixAttempts: run.reviewFixAttempts,
     claimKey: run.claimKey ?? null,
     runDir: run.runDir,
     workspaceDir: run.workspaceDir,
@@ -642,6 +650,7 @@ function runToUpdate(run: RunRecord, paths: RunPaths): Partial<typeof runs.$infe
     status: run.status,
     currentAttemptId: run.currentAttemptId,
     ciFixAttempts: run.ciFixAttempts,
+    reviewFixAttempts: run.reviewFixAttempts,
     claimKey: run.claimKey ?? null,
     runDir: run.runDir,
     workspaceDir: run.workspaceDir,
@@ -671,6 +680,7 @@ function runFromRow(row: RunRow): RunRecord {
     status: row.status as RunStatus,
     currentAttemptId: row.currentAttemptId,
     ciFixAttempts: row.ciFixAttempts,
+    reviewFixAttempts: row.reviewFixAttempts,
     runDir: row.runDir,
     workspaceDir: row.workspaceDir,
     createdAt: row.createdAt,

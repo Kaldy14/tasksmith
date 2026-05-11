@@ -3,8 +3,9 @@
 ## Current status
 
 **Stage:** Phase 8 — hardening foundation  
-**Code status:** Manual Run, verifier, bounded verifier fix attempts, source pickup, per-repo init commands, config UI, fresh-context review, optional CodeRabbit CLI review, ready-to-review GitHub PR delivery, Postgres app state, and Better Auth UI/API protection implemented
-**Primary next milestone:** restricted-user/container worker isolation, then extend bounded fix attempts to review findings and CI fixup.
+**Code status:** Manual Run, verifier, bounded verifier/review/CI fix attempts, source pickup, per-repo init commands, config UI, fresh-context review, optional CodeRabbit CLI review, ready-to-review GitHub PR delivery, Postgres app state, and Better Auth UI/API protection implemented
+
+**Primary next milestone:** restricted-user/container worker isolation, then deepen Jira lifecycle automation and observability.
 
 TaskSmith currently has durable product/architecture docs, ADRs, research references, and implementation briefs. The next work should be a technical spike, not a full app scaffold.
 
@@ -25,6 +26,7 @@ Jira/GitHub issue marked tasksmith
   -> Failed verifier output creates fix attempt
   -> Fresh-context review checks the diff
   -> Optional CodeRabbit CLI review checks the diff
+  -> Blocking review findings create a bounded fix attempt
   -> Ready-to-review PR is created
   -> Jira is updated with status, logs, PR link
   -> CI is monitored and fixup attempts are run
@@ -288,7 +290,7 @@ A separate review pass checks the final diff before PR is marked ready.
 - [x] Define block policy for severe findings: `high`/`critical` block delivery.
 - [x] Add optional CodeRabbit CLI review after TaskSmith review and before delivery.
 - [x] Skip CodeRabbit review on rate limits/unavailable CLI and continue with TaskSmith review as sufficient.
-- [ ] Create fix attempt from findings.
+- [x] Create bounded review-fix attempts from blocking findings without consuming verifier or CI fix budgets.
 - [x] Include review summary in PR.
 
 ### Exit gate
@@ -297,6 +299,7 @@ A separate review pass checks the final diff before PR is marked ready.
 - [x] Review findings are structured and persisted.
 - [x] Severe findings block PR readiness in review e2e.
 - [x] CodeRabbit CLI review runs before ready PR/direct merge in delivery e2e and rate-limit skip does not block delivery.
+- [x] Blocking review findings can trigger a bounded fix attempt, rerun verification/review, and continue delivery when fixed.
 
 ## M7 — CI fixup
 

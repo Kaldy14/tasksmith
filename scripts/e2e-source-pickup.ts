@@ -53,6 +53,7 @@ async function main(): Promise<void> {
       TASKSMITH_JIRA_BASE_URL: `http://127.0.0.1:${jiraPort}`,
       TASKSMITH_JIRA_EMAIL: "agent@example.test",
       TASKSMITH_JIRA_API_TOKEN: "fake-token",
+      TASKSMITH_SOURCE_POLLING: "0",
       PORT: String(port),
       HOST: "127.0.0.1",
     },
