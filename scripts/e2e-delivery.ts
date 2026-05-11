@@ -36,6 +36,8 @@ async function main(): Promise<void> {
   const binDir = path.join(tempDir, "bin");
   const ghLogPath = path.join(tempDir, "gh-calls.jsonl");
   const ghStatePath = path.join(tempDir, "gh-state.json");
+  const crLogPath = path.join(tempDir, "cr-calls.jsonl");
+  const crStatePath = path.join(tempDir, "cr-state.json");
   const remoteRepoDir = path.join(tempDir, "remote.git");
   const squashRemoteRepoDir = path.join(tempDir, "squash-remote.git");
   const configPath = path.join(tempDir, "tasksmith-config.json");
@@ -43,6 +45,7 @@ async function main(): Promise<void> {
 
   await mkdir(binDir, { recursive: true });
   await writeFakeGh(path.join(binDir, "gh"), ghLogPath, ghStatePath);
+  await writeFakeCr(path.join(binDir, "cr"), crLogPath, crStatePath);
   await createBareFixtureRemote(tempDir, remoteRepoDir);
   await createBareFixtureRemote(tempDir, squashRemoteRepoDir);
   await writeFile(configPath, JSON.stringify(buildConfig(pathToFileURL(remoteRepoDir).href, pathToFileURL(squashRemoteRepoDir).href), null, 2), "utf8");
@@ -104,6 +107,7 @@ async function main(): Promise<void> {
     assert(eventText.includes('"type":"ci"'), "events should include CI polling events");
     assert(eventText.includes("CI fix attempt"), "events should include CI fix attempt status");
     assert(eventText.includes("Updated existing PR branch"), "events should include existing PR branch update");
+    assert(eventText.includes("CodeRabbit CLI review passed with no findings"), "events should include passing CodeRabbit CLI review");
 
     const squashCreated = await postJson<RunResponse>(`${baseUrl}/api/runs`, {
       title: "Delivery squash merge e2e",
@@ -120,6 +124,7 @@ async function main(): Promise<void> {
     assert(squashEventText.includes('"mode":"squash_merge_main"'), "events should include squash_merge_main delivery mode");
     assert(squashEventText.includes("Squash-merged to main"), "events should include squash merge summary");
     assert(squashEventText.includes("git push origin HEAD:refs/heads/main"), "events should include direct push command");
+    assert(squashEventText.includes("CodeRabbit CLI review skipped because CodeRabbit reported a rate limit"), "rate-limited CodeRabbit review should be skipped before squash merge");
 
     const ghLog = await readFile(ghLogPath, "utf8");
     assert(countOccurrences(ghLog, '"pr","create"') === 1, "gh pr create should only be called for ready_pr delivery");
@@ -127,6 +132,11 @@ async function main(): Promise<void> {
     assert(ghLog.includes('"run","view"'), "failed CI logs should be fetched");
     assert(!ghLog.includes('"--draft"'), "gh pr create must not use --draft");
     assert(ghLog.includes("ready-to-review"), "gh pr create body should say ready-to-review");
+
+    const crLog = await readFile(crLogPath, "utf8");
+    assert(countOccurrences(crLog, '"review","--agent"') === 3, "CodeRabbit CLI should run before ready PR delivery, CI fix delivery, and squash delivery");
+    assert(crLog.includes('"--dir"'), "CodeRabbit CLI should receive workspace dir");
+    assert(crLog.includes('"--base","main"'), "CodeRabbit CLI should receive base branch");
 
     console.log("Delivery e2e passed");
   } finally {
@@ -160,6 +170,7 @@ function buildConfig(remoteUrl: string, squashRemoteUrl: string): unknown {
         gitUrl: remoteUrl,
         defaultBranch: "main",
         gitProvider: { type: "github", owner: "octo", repo: "delivery-fixture", ghConfigDir: "/tmp/fake-gh-config" },
+        codeRabbit: { enabled: true, cli: { enabled: true, command: "cr", timeoutMs: 30_000 } },
         verify: [
           {
             name: "delivery-change-exists",
@@ -173,6 +184,7 @@ function buildConfig(remoteUrl: string, squashRemoteUrl: string): unknown {
         gitUrl: squashRemoteUrl,
         defaultBranch: "main",
         gitProvider: { type: "github", owner: "octo", repo: "squash-fixture", ghConfigDir: "/tmp/fake-gh-config" },
+        codeRabbit: { enabled: true, cli: { enabled: true, command: "cr", timeoutMs: 30_000 } },
         workflow: {
           type: "single_task_sandcastle",
           stages: ["plan", "implement", "deep_review", "fix", "deliver"],
@@ -226,6 +238,35 @@ if (args[0] === 'run' && args[1] === 'view') {
   process.exit(0);
 }
 console.error('unexpected gh args: ' + args.join(' '));
+process.exit(2);
+`;
+  await writeFile(filePath, script, "utf8");
+  await chmod(filePath, 0o755);
+}
+
+async function writeFakeCr(filePath: string, logPath: string, statePath: string): Promise<void> {
+  const script = `#!/usr/bin/env node
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+const statePath = ${JSON.stringify(statePath)};
+function readState() {
+  try { return JSON.parse(fs.readFileSync(statePath, 'utf8')); } catch { return { reviews: 0 }; }
+}
+function writeState(state) { fs.writeFileSync(statePath, JSON.stringify(state)); }
+fs.appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args }) + '\\n');
+if (args[0] === 'review' && args.includes('--agent')) {
+  const state = readState();
+  state.reviews = (state.reviews || 0) + 1;
+  writeState(state);
+  if (state.reviews === 3) {
+    console.error('CodeRabbit rate limit exceeded: HTTP 429');
+    process.exit(7);
+  }
+  console.log(JSON.stringify({ type: 'status', message: 'fake CodeRabbit started' }));
+  console.log(JSON.stringify({ type: 'complete', summary: 'fake CodeRabbit completed with no findings' }));
+  process.exit(0);
+}
+console.error('unexpected cr args: ' + args.join(' '));
 process.exit(2);
 `;
   await writeFile(filePath, script, "utf8");

@@ -87,7 +87,7 @@ export interface RepositorySummary {
   gitProvider?: { type: "github"; owner: string; repo: string };
   issueProvider?: { type: "github_issues" | "jira" };
   workflow?: { deliveryMode: "ready_pr" | "squash_merge_main"; maxFixAttempts: number; maxCiFixAttempts: number };
-  codeRabbit?: { enabled: boolean; reviewTrigger: "auto" | "description_keyword" };
+  codeRabbit?: { enabled: boolean; cliEnabled: boolean };
   initCommandCount: number;
   hasVerificationProfile: boolean;
 }

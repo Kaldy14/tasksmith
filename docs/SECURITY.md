@@ -21,8 +21,9 @@ Potential threats:
 2. Do not mount a full developer home directory.
 3. Do not let agents directly call Jira/Git provider APIs for lifecycle control.
 4. Do not auto-merge by default; direct merge requires explicit `squash_merge_main` configuration and passing verification/review gates.
-5. Persist raw logs, but redact secrets before UI display.
-6. Use per-run workspaces and per-run home/session directories.
+5. Enable external reviewers such as CodeRabbit only per repository, because workspace diffs may be sent to that service.
+6. Persist raw logs, but redact secrets before UI display.
+7. Use per-run workspaces and per-run home/session directories.
 
 ## Secret boundaries
 
@@ -120,12 +121,13 @@ Default delivery policy:
 - include AI-generated marker,
 - include run link,
 - require human review before merge,
-- poll PR CI and keep fix attempts bounded by `maxCiFixAttempts`.
+- poll PR CI and keep fix attempts bounded by `maxCiFixAttempts`,
+- optionally run CodeRabbit CLI before delivery only for repositories that explicitly enable it.
 
 Explicit `squash_merge_main` policy:
 
 - opt in per deployment or per repository,
-- run only after deterministic verification and fresh-context review pass,
+- run only after deterministic verification, fresh-context review, and any configured CodeRabbit CLI review pass or skip due to rate limiting/unavailability,
 - create one TaskSmith commit from the workspace diff,
 - push without force to the configured target branch,
 - emit and persist delivery events with the target branch and commit URL/SHA,

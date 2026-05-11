@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
   AppConfig,
+  CodeRabbitConfig,
   GitHubProviderConfig,
   IssueProviderConfig,
   RepositoryConfig,
@@ -154,6 +155,7 @@ function parseRepositoryConfig(value: unknown, label: string): RepositoryConfig 
   if (record.initCommands !== undefined) config.initCommands = parseVerificationCommandArray(record.initCommands, `${label}.initCommands`);
   if (record.verify !== undefined) config.verify = parseVerificationCommandArray(record.verify, `${label}.verify`);
   if (record.workflow !== undefined) config.workflow = parseWorkflow(record.workflow, `${label}.workflow`);
+  if (record.codeRabbit !== undefined) config.codeRabbit = parseCodeRabbitConfig(record.codeRabbit, `${label}.codeRabbit`);
   return config;
 }
 
@@ -217,6 +219,27 @@ function parseDeliveryMode(value: unknown, label: string): "ready_pr" | "squash_
   if (value === "ready_pr" || value === "squash_merge_main") return value;
   if (value === "draft_pr") return "ready_pr";
   throw new Error(`${label} must be 'ready_pr' or 'squash_merge_main'`);
+}
+
+function parseCodeRabbitConfig(value: unknown, label: string): CodeRabbitConfig {
+  const record = expectRecord(value, label);
+  const enabled = record.enabled === undefined ? true : parseBoolean(record.enabled, `${label}.enabled`);
+  return {
+    enabled,
+    cli: parseCodeRabbitCliConfig(record.cli, enabled, `${label}.cli`),
+  };
+}
+
+function parseCodeRabbitCliConfig(value: unknown, defaultEnabled: boolean, label: string): CodeRabbitConfig["cli"] {
+  if (value === undefined) {
+    return { enabled: defaultEnabled, command: "cr", timeoutMs: 1_800_000 };
+  }
+  const record = expectRecord(value, label);
+  return {
+    enabled: record.enabled === undefined ? defaultEnabled : parseBoolean(record.enabled, `${label}.enabled`),
+    command: record.command === undefined ? "cr" : parseRequiredString(record.command, `${label}.command`, 200),
+    timeoutMs: record.timeoutMs === undefined ? 1_800_000 : parseTimeout(record.timeoutMs, `${label}.timeoutMs`),
+  };
 }
 
 function defaultSourceFlow(): SourceFlowConfig {
@@ -306,6 +329,11 @@ function parseStringArray(value: unknown, label: string, maxBytes: number): stri
 function parseIssueState(value: unknown, label: string): "open" | "closed" | "all" {
   if (value === "open" || value === "closed" || value === "all") return value;
   throw new Error(`${label} must be 'open', 'closed', or 'all'`);
+}
+
+function parseBoolean(value: unknown, label: string): boolean {
+  if (typeof value === "boolean") return value;
+  throw new Error(`${label} must be a boolean`);
 }
 
 function parseRequiredString(value: unknown, label: string, maxBytes: number): string {

@@ -3,7 +3,7 @@
 ## Current status
 
 **Stage:** Phase 8 — hardening foundation  
-**Code status:** Manual Run, verifier, bounded verifier fix attempts, source pickup, per-repo init commands, config UI, fresh-context review, ready-to-review GitHub PR delivery, Postgres app state, and Better Auth UI/API protection implemented  
+**Code status:** Manual Run, verifier, bounded verifier fix attempts, source pickup, per-repo init commands, config UI, fresh-context review, optional CodeRabbit CLI review, ready-to-review GitHub PR delivery, Postgres app state, and Better Auth UI/API protection implemented
 **Primary next milestone:** restricted-user/container worker isolation, then extend bounded fix attempts to review findings and CI fixup.
 
 TaskSmith currently has durable product/architecture docs, ADRs, research references, and implementation briefs. The next work should be a technical spike, not a full app scaffold.
@@ -24,6 +24,7 @@ Jira/GitHub issue marked tasksmith
   -> Deterministic verifier runs tests/e2e
   -> Failed verifier output creates fix attempt
   -> Fresh-context review checks the diff
+  -> Optional CodeRabbit CLI review checks the diff
   -> Ready-to-review PR is created
   -> Jira is updated with status, logs, PR link
   -> CI is monitored and fixup attempts are run
@@ -285,6 +286,8 @@ A separate review pass checks the final diff before PR is marked ready.
 - [x] Store findings.
 - [~] Display review panel: review events render in stream; dedicated review panel still pending.
 - [x] Define block policy for severe findings: `high`/`critical` block delivery.
+- [x] Add optional CodeRabbit CLI review after TaskSmith review and before delivery.
+- [x] Skip CodeRabbit review on rate limits/unavailable CLI and continue with TaskSmith review as sufficient.
 - [ ] Create fix attempt from findings.
 - [x] Include review summary in PR.
 
@@ -293,6 +296,7 @@ A separate review pass checks the final diff before PR is marked ready.
 - [x] Implementation context is not reused for deterministic review.
 - [x] Review findings are structured and persisted.
 - [x] Severe findings block PR readiness in review e2e.
+- [x] CodeRabbit CLI review runs before ready PR/direct merge in delivery e2e and rate-limit skip does not block delivery.
 
 ## M7 — CI fixup
 

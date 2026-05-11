@@ -297,6 +297,43 @@ Ready PR delivery requires:
 - `gitProvider.owner` and `gitProvider.repo`,
 - a working `gh` auth profile via `gitProvider.ghConfigDir` when the repo is private or PR creation requires auth.
 
+## Optional CodeRabbit CLI review
+
+CodeRabbit CLI can be enabled per repository as an extra review pass after TaskSmith's fresh-context review and before delivery. This works for both `ready_pr` and `squash_merge_main` because it reviews the workspace diff before TaskSmith creates a PR or pushes the direct-merge commit.
+
+Install and authenticate CodeRabbit on the TaskSmith host, outside agent sandboxes:
+
+```bash
+curl -fsSL https://cli.coderabbit.ai/install.sh | sh
+# or: brew install coderabbit
+cr auth login
+```
+
+Then opt in only the repositories that should use CodeRabbit:
+
+```json
+{
+  "repos": {
+    "repo-key": {
+      "codeRabbit": {
+        "enabled": true,
+        "cli": { "enabled": true, "command": "cr", "timeoutMs": 1800000 }
+      }
+    }
+  }
+}
+```
+
+TaskSmith runs:
+
+```bash
+cr review --agent --dir <run-workspace> --base <defaultBranch>
+```
+
+The `--agent` JSON findings are converted into TaskSmith review findings. `critical` and `major` CodeRabbit findings are treated as blocking (`critical`/`high` in TaskSmith severity); lower-severity findings are recorded but do not block delivery. If CodeRabbit reports a rate limit, times out, is not installed, or otherwise cannot run, TaskSmith emits a skipped review event and continues with its own deterministic verification plus fresh-context review as the sufficient gate.
+
+CodeRabbit is still optional repository-by-repository. Public/OSS repositories can use CodeRabbit's free public-repo/OSS limits; private repositories require whatever paid/subscription access your CodeRabbit account provides. Do not enable `codeRabbit` for repos that should not be reviewed by CodeRabbit.
+
 Squash-merge delivery requires:
 
 - `gitUrl`, so TaskSmith can clone and push the target branch,
@@ -308,7 +345,7 @@ The personal example config opts the `tasksmith` repository into `squash_merge_m
 
 If deterministic verification fails, TaskSmith checks `repos.<repoKey>.workflow.maxFixAttempts` first, then the global `workflow.maxFixAttempts`. When the limit is greater than zero, the Run enters `fixing`, advances to the next attempt id (for example `attempt-2`), gives the runtime a follow-up containing the verifier summary and a smallest-fix-only instruction, and reruns verification after that attempt completes. No PR is created during verifier-fix attempts. If the configured attempts are exhausted, the Run fails with the verifier summary.
 
-After verification passes, TaskSmith runs a fresh-context diff review before delivery. The current reviewer is a deterministic guardrail pass over the final workspace diff: it persists `review-diff.patch` and `review-diff-stat.txt`, emits structured findings, and blocks delivery on `high` or `critical` findings such as secret-looking values or local env/dependency files. Review metadata is stored in `state/reviews.json` and exposed at `GET /api/reviews` and `GET /api/runs/:id/review`.
+After verification passes, TaskSmith runs a fresh-context diff review before delivery. The current reviewer is a deterministic guardrail pass over the final workspace diff: it persists `review-diff.patch` and `review-diff-stat.txt`, emits structured findings, and blocks delivery on `high` or `critical` findings such as secret-looking values or local env/dependency files. If `codeRabbit.cli.enabled` is true for the repository, TaskSmith then runs CodeRabbit CLI and merges its findings into the persisted review record. Review metadata is stored in `state/reviews.json` and exposed at `GET /api/reviews` and `GET /api/runs/:id/review`.
 
 If verification and review pass in `ready_pr` mode, TaskSmith checks for a non-empty diff, creates a branch named `tasksmith/<source-or-title>-<run-suffix>`, commits all workspace changes with the TaskSmith bot identity, pushes the branch, and runs `gh pr create` without `--draft`. PR metadata is stored in `state/pull-requests.json` and exposed at `GET /api/pull-requests`. Source issues receive a PR-link comment when credentials are available.
 

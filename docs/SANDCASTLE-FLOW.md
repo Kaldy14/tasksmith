@@ -18,6 +18,7 @@ source issue
   -> implement
   -> deterministic verifier
   -> deep review
+  -> optional CodeRabbit CLI review
   -> fix review/verifier findings, bounded
   -> deliver
   -> watch PR CI and run bounded CI fixup when ready_pr delivery creates a PR
@@ -26,7 +27,7 @@ source issue
 The user's requested shorthand is:
 
 ```txt
-plan -> implement -> deep review -> fix -> PR OR squash-and-merge-main
+plan -> implement -> deep review -> optional CodeRabbit CLI review -> fix -> PR OR squash-and-merge-main
 ```
 
 ## Phase semantics
@@ -55,6 +56,8 @@ TaskSmith, not Pi, runs deterministic verifier commands from config. Failed veri
 
 A fresh-context reviewer inspects the diff, plan, source issue, and verifier result. It emits structured findings. Severe findings block delivery or trigger fix attempts.
 
+If configured for the repository, TaskSmith then runs `cr review --agent` in the workspace and merges CodeRabbit CLI findings into the persisted review record. Critical/major CodeRabbit findings block delivery. Rate limits and CLI availability failures are treated as a skipped external review, not a failed Run, because TaskSmith's own deterministic verification and fresh-context review remain sufficient.
+
 ### 5. Fix
 
 TaskSmith starts bounded fix attempts using review/verifier findings. `maxFixAttempts` is configured by workflow.
@@ -73,7 +76,7 @@ or:
 { "deliveryMode": "squash_merge_main", "mergeTargetBranch": "main" }
 ```
 
-`ready_pr` is the safe default and creates a non-draft, ready-to-review PR. After PR creation, TaskSmith polls GitHub checks, fetches failed Actions logs, and can run bounded CI fix attempts that push fix commits to the existing PR branch. `squash_merge_main` is an explicit delivery mode for deployments/repos where direct merge is desired. Legacy `draft_pr` config values are normalized to `ready_pr` for compatibility.
+`ready_pr` is the safe default and creates a non-draft, ready-to-review PR. After PR creation, TaskSmith polls GitHub checks, fetches failed Actions logs, and can run bounded CI fix attempts that push fix commits to the existing PR branch. Optional CodeRabbit CLI review runs before both `ready_pr` and `squash_merge_main` delivery. `squash_merge_main` is an explicit delivery mode for deployments/repos where direct merge is desired. Legacy `draft_pr` config values are normalized to `ready_pr` for compatibility.
 
 ## Current implementation status
 
@@ -88,6 +91,7 @@ Implemented now:
 - manual runs against configured repos,
 - GitHub Issues and Jira source polling with idempotent claims,
 - fresh-context diff review with structured findings and severe-finding blocking,
+- optional CodeRabbit CLI review before delivery with rate-limit skip behavior,
 - ready-to-review GitHub PR creation after deterministic verification and review,
 - explicit `squash_merge_main` delivery that creates one TaskSmith commit and pushes it to the configured target branch without force,
 - GitHub CI polling/fixup after ready PR creation with bounded fix commits to the existing PR branch.

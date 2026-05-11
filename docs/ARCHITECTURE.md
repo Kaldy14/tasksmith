@@ -35,11 +35,12 @@ TaskSmith should be built around **Runs** and **Events**, not around raw agent p
 11. Verifier runs deterministic checks.
 12. If checks fail, worker starts a fix attempt with logs.
 13. Reviewer performs fresh-context diff review.
-14. Orchestrator enters delivery only after verification and review pass and the Run is not terminal/cancelled.
-15. For `ready_pr`, PR Creator must push a TaskSmith branch, open a ready-to-review PR, persist PR metadata, and enter CI watching.
-16. CI Watcher must poll GitHub checks for the PR. Passing or absent checks result in `pr_created`; failed checks produce a bounded CI fix attempt with failed log context, then update the existing PR branch and poll again.
-17. For explicit `squash_merge_main`, delivery must create one TaskSmith commit, push it without force to the configured target branch, emit the commit URL/SHA, and transition the Run to `completed`.
-18. Jira/GitHub updater comments/transitions the source issue when credentials are available.
+14. If configured for the repository, CodeRabbit CLI runs as an additional external review before delivery; rate limits/unavailable CLI skip this external pass rather than failing the Run.
+15. Orchestrator enters delivery only after verification and required review gates pass and the Run is not terminal/cancelled.
+16. For `ready_pr`, PR Creator must push a TaskSmith branch, open a ready-to-review PR, persist PR metadata, and enter CI watching.
+17. CI Watcher must poll GitHub checks for the PR. Passing or absent checks result in `pr_created`; failed checks produce a bounded CI fix attempt with failed log context, then update the existing PR branch and poll again.
+18. For explicit `squash_merge_main`, delivery must create one TaskSmith commit, push it without force to the configured target branch, emit the commit URL/SHA, and transition the Run to `completed`.
+19. Jira/GitHub updater comments/transitions the source issue when credentials are available.
 ```
 
 ## Component diagram
@@ -137,9 +138,11 @@ Responsibilities:
 Responsibilities:
 
 - run a fresh-context review against the final diff,
+- optionally run CodeRabbit CLI as a per-repo external review using structured `--agent` output,
+- skip the CodeRabbit external review on rate limits or unavailable CLI while keeping TaskSmith's own review sufficient,
 - classify findings by severity,
 - optionally ask implementation agent to fix trivial findings,
-- block PR creation on severe findings according to policy.
+- block PR creation/direct delivery on severe findings according to policy.
 
 ### PR Creator
 

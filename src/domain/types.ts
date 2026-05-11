@@ -191,6 +191,17 @@ export interface SourceFlowConfig {
 
 export type DeliveryMode = "ready_pr" | "squash_merge_main";
 
+export interface CodeRabbitCliConfig {
+  enabled: boolean;
+  command: string;
+  timeoutMs: number;
+}
+
+export interface CodeRabbitConfig {
+  enabled: boolean;
+  cli: CodeRabbitCliConfig;
+}
+
 export interface SingleTaskWorkflowConfig {
   type: "single_task_sandcastle";
   stages: ["plan", "implement", "deep_review", "fix", "deliver"];
@@ -214,6 +225,7 @@ export interface RepositoryConfig {
   initCommands?: VerificationCommandConfig[];
   verify?: VerificationCommandConfig[];
   workflow?: SingleTaskWorkflowConfig;
+  codeRabbit?: CodeRabbitConfig;
 }
 
 export interface VerificationConfig {

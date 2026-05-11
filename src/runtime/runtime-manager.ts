@@ -5,6 +5,7 @@ import type { PullRequestDelivery } from "../delivery/pull-request-delivery.js";
 import type { GitHubCiWatcher, CiWatchResult } from "../ci/github-ci-watcher.js";
 import type { FreshContextReviewer } from "../review/fresh-context-reviewer.js";
 import type { DeterministicVerifier } from "../verifier/deterministic-verifier.js";
+import { CodeRabbitCliReviewer } from "../review/coderabbit-cli-reviewer.js";
 import { DemoRuntime, type RuntimeSink } from "./demo-adapter.js";
 import { PiRuntime } from "./pi-adapter.js";
 import { WorkspacePreparer } from "./workspace-preparer.js";
@@ -14,6 +15,7 @@ type StartableRuntime = RuntimeHandle & { start(): Promise<void> };
 export class RuntimeManager {
   private readonly active = new Map<string, RuntimeHandle>();
   private readonly workspacePreparer: WorkspacePreparer;
+  private readonly codeRabbitReviewer = new CodeRabbitCliReviewer();
 
   constructor(
     private readonly store: FileStore,
@@ -191,7 +193,32 @@ export class RuntimeManager {
       return;
     }
 
-    await this.deliverReviewedRun(runId, verificationSummary, review);
+    const reviewAfterCodeRabbit = await this.reviewWithCodeRabbitIfConfigured(runId, review);
+    if (reviewAfterCodeRabbit.status === "failed") {
+      await this.store.updateRun(runId, { status: "failed", error: `Review failed: ${reviewAfterCodeRabbit.summary}`, finishedAt: new Date().toISOString() });
+      await this.emit(runId, { type: "error", message: "Review blocked delivery", detail: reviewAfterCodeRabbit.summary });
+      await this.emit(runId, { type: "run_status", status: "failed", detail: reviewAfterCodeRabbit.summary });
+      return;
+    }
+
+    await this.deliverReviewedRun(runId, verificationSummary, reviewAfterCodeRabbit);
+  }
+
+  private async reviewWithCodeRabbitIfConfigured(runId: string, review: ReviewRecord): Promise<ReviewRecord> {
+    const run = await this.requireRun(runId);
+    const repo = this.repositories[run.repoKey];
+    const codeRabbitResult = await this.codeRabbitReviewer.review(run, this.store.pathsForRun(runId), repo, async (event) => {
+      await this.emit(runId, event);
+    });
+    if (codeRabbitResult.status === "skipped") return review;
+
+    return this.store.recordReview({
+      runId,
+      status: codeRabbitResult.status,
+      summary: `${review.summary} ${codeRabbitResult.summary}`,
+      findings: [...review.findings, ...codeRabbitResult.findings],
+      ...(review.diffStat ? { diffStat: review.diffStat } : {}),
+    });
   }
 
   private async deliverReviewedRun(runId: string, verificationSummary: string, review: ReviewRecord): Promise<void> {
