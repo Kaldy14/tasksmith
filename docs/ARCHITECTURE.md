@@ -70,7 +70,7 @@ TaskSmith should be built around **Runs** and **Events**, not around raw agent p
 
 Responsibilities:
 
-- authenticate internal users,
+- authenticate internal users with Better Auth email/password sessions when enabled,
 - expose run list/detail APIs,
 - expose WebSocket run stream,
 - accept user control messages,
@@ -217,7 +217,7 @@ Postgres stores app state and queryable metadata:
 - human control messages,
 - pull request and review metadata/findings,
 - artifact rows and file pointers,
-- future Better Auth user/session/account/verification tables.
+- Better Auth user/session/account/verification tables when auth is enabled.
 
 Local tests can omit `TASKSMITH_DATABASE_URL` and use the legacy file-backed store. Production/internal deployments should use Postgres. Multi-process workers still require a later queue/lease model.
 

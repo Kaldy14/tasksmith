@@ -2,19 +2,20 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { listRuns } from "@/api";
 import type { RunRecord } from "@/types";
 
-export function useRuns(): {
+export function useRuns(options: { enabled?: boolean } = {}): {
   runs: RunRecord[];
   loading: boolean;
   error: string | undefined;
   refresh: () => Promise<void>;
 } {
   const [runs, setRuns] = useState<RunRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const enabled = options.enabled ?? true;
+  const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | undefined>(undefined);
   const inFlight = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (inFlight.current) return;
+    if (!enabled || inFlight.current) return;
     inFlight.current = true;
     try {
       const next = await listRuns();
@@ -26,11 +27,15 @@ export function useRuns(): {
       inFlight.current = false;
       setLoading(false);
     }
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
     void refresh();
-  }, [refresh]);
+  }, [enabled, refresh]);
 
   return { runs, loading, error, refresh };
 }

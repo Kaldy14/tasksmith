@@ -6,9 +6,11 @@ import {
   createRoute,
   createRouter,
   useParams,
+  useRouterState,
 } from "@tanstack/react-router";
 import { Anvil } from "@/components/anvil";
 import { ConfigPage } from "@/components/config-page";
+import { LoginPage } from "@/components/login-page";
 import { ProjectRail } from "@/components/project-rail";
 import { useRuns } from "@/hooks/use-runs";
 import type { ConnectionStatus } from "@/types";
@@ -28,8 +30,12 @@ function useShellContext(): ShellContextValue {
 }
 
 function RootShell() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const isLogin = pathname === "/login";
   const [connection, setConnection] = useState<ConnectionStatus>("idle");
-  const { runs, loading, refresh } = useRuns();
+  const { runs, loading, refresh } = useRuns({ enabled: !isLogin });
+
+  if (isLogin) return <Outlet />;
 
   const refreshRuns = useCallback(() => {
     void refresh();
@@ -98,7 +104,13 @@ const configRoute = createRoute({
   component: ConfigRoute,
 });
 
-const routeTree = rootRoute.addChildren([indexRoute, runRoute, configRoute]);
+const loginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/login",
+  component: LoginPage,
+});
+
+const routeTree = rootRoute.addChildren([indexRoute, runRoute, configRoute, loginRoute]);
 
 export const router = createRouter({
   routeTree,

@@ -58,9 +58,9 @@ The current MVP runs directly on a dedicated TaskSmith server. This is acceptabl
 
 ## Database boundary
 
-Postgres is an app-side metadata/auth database. It must bind to localhost or a private network only, and `TASKSMITH_DATABASE_URL` must stay in root-owned systemd env files outside the repository. The server loads this URL into config and removes it from `process.env` before Pi can start, which prevents normal child-process environment inheritance. This is not a complete same-UID sandbox: Linux procfs and unrestricted shell tools are still reasons to move Pi/tool execution to a separate restricted user or container before storing high-value secrets for public deployments. Never copy the database URL into per-run homes, workspaces, prompts, verifier logs, or Pi session material.
+Postgres is an app-side metadata/auth database. It must bind to localhost or a private network only, and `TASKSMITH_DATABASE_URL` plus Better Auth secrets must stay in root-owned systemd env files outside the repository. The server loads these values into config and removes `TASKSMITH_DATABASE_URL`, `TASKSMITH_AUTH_SECRET`, and `BETTER_AUTH_SECRET` from `process.env` before Pi can start, which prevents normal child-process environment inheritance. This is not a complete same-UID sandbox: Linux procfs and unrestricted shell tools are still reasons to move Pi/tool execution to a separate restricted user or container before storing high-value secrets for public deployments. Never copy database URLs or auth secrets into per-run homes, workspaces, prompts, verifier logs, or Pi session material.
 
-TaskSmith stores Pi chat/session files and raw Pi event JSONL on disk under the Run directory. Postgres stores normalized TaskSmith UI events, control messages, app metadata, and pointers to artifact files; it does not store raw Pi transcript structures.
+TaskSmith stores Pi chat/session files and raw Pi event JSONL on disk under the Run directory. Postgres stores normalized TaskSmith UI events, control messages, app metadata, artifact pointers, and Better Auth user/session/account/verification tables; it does not store raw Pi transcript structures.
 
 ### Docker
 

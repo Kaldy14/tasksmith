@@ -8,6 +8,7 @@ import { parseControlInput, parseCreateRunInput } from "../domain/validation.js"
 import type { FileStore } from "../storage/file-store.js";
 import type { RuntimeManager } from "../runtime/runtime-manager.js";
 import type { SourcePoller } from "../sources/source-poller.js";
+import type { TaskSmithAuthService } from "../auth/tasksmith-auth.js";
 import { readEditableConfig, saveEditableConfig } from "./config.js";
 import { EventHub, sendJson } from "./event-hub.js";
 
@@ -17,6 +18,7 @@ interface ServerDeps {
   runtime: RuntimeManager;
   sourcePoller: SourcePoller;
   hub: EventHub;
+  auth: TaskSmithAuthService | undefined;
 }
 
 export function createTaskSmithServer(deps: ServerDeps): ReturnType<typeof createServer> {
@@ -34,12 +36,22 @@ export function createTaskSmithServer(deps: ServerDeps): ReturnType<typeof creat
       socket.destroy();
       return;
     }
-    const runId = decodeURIComponent(match[1] ?? "");
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      void handleRunSocket(deps, runId, url, ws).catch((error: unknown) => {
-        ws.send(JSON.stringify({ type: "error", error: error instanceof Error ? error.message : String(error) }));
-        ws.close();
+    void ensureAuthenticated(deps, req).then((ok) => {
+      if (!ok) {
+        socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+      const runId = decodeURIComponent(match[1] ?? "");
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        void handleRunSocket(deps, runId, url, ws).catch((error: unknown) => {
+          ws.send(JSON.stringify({ type: "error", error: error instanceof Error ? error.message : String(error) }));
+          ws.close();
+        });
       });
+    }).catch(() => {
+      socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+      socket.destroy();
     });
   });
 
@@ -52,7 +64,17 @@ async function routeHttp(deps: ServerDeps, req: IncomingMessage, res: ServerResp
 
   if (method === "GET" && url.pathname === "/healthz") {
     const storage = deps.store.hasMetadataIndex() ? "postgres" : "file-only";
-    sendJson(res, 200, { ok: true, storage, metadataIndex: storage });
+    sendJson(res, 200, { ok: true, storage, metadataIndex: storage, auth: deps.auth ? "enabled" : "disabled" });
+    return;
+  }
+
+  if (deps.auth && url.pathname.startsWith("/api/auth/")) {
+    await deps.auth.handleNode(req, res);
+    return;
+  }
+
+  if (url.pathname.startsWith("/api/") && !(await ensureAuthenticated(deps, req))) {
+    sendJson(res, 401, { error: "Authentication required" });
     return;
   }
 
@@ -158,7 +180,33 @@ async function routeHttp(deps: ServerDeps, req: IncomingMessage, res: ServerResp
     return;
   }
 
+  if (url.pathname.startsWith("/api/")) {
+    sendJson(res, 404, { error: "Not found" });
+    return;
+  }
+
+  if (requiresAuthenticatedPage(deps, url.pathname) && !(await ensureAuthenticated(deps, req))) {
+    redirect(res, "/login");
+    return;
+  }
+
   await serveStatic(deps.config, url.pathname, res);
+}
+
+async function ensureAuthenticated(deps: ServerDeps, req: IncomingMessage): Promise<boolean> {
+  if (!deps.auth) return true;
+  return (await deps.auth.getSession(req.headers)) !== null;
+}
+
+function requiresAuthenticatedPage(deps: ServerDeps, pathname: string): boolean {
+  if (!deps.auth) return false;
+  if (pathname === "/login") return false;
+  return !path.extname(pathname);
+}
+
+function redirect(res: ServerResponse, location: string): void {
+  res.writeHead(302, { location, "cache-control": "no-store" });
+  res.end();
 }
 
 async function handleRunSocket(deps: ServerDeps, runId: string, url: URL, ws: WebSocket): Promise<void> {

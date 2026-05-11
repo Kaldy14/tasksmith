@@ -63,6 +63,8 @@ POST /api/runs/:id/abort-bash
 WS   /api/runs/:id/stream?after=<sequence>
 ```
 
+When `TASKSMITH_AUTH_ENABLED=1`, all `/api/**` routes and run WebSocket streams require a Better Auth session except `/api/auth/**`; `/healthz` stays public for health checks.
+
 Create Run body:
 
 ```json

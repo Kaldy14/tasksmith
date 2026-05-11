@@ -8,6 +8,9 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const text = await response.text();
   const body = (text ? JSON.parse(text) : {}) as T & { error?: string };
   if (!response.ok) {
+    if (response.status === 401 && location.pathname !== "/login") {
+      window.location.href = "/login";
+    }
     throw new Error(body.error ?? `HTTP ${response.status}`);
   }
   return body as T;

@@ -81,8 +81,12 @@ TaskSmith is configured with:
 TASKSMITH_PI_AUTH_SOURCE=/home/deploy/.pi/agent
 TASKSMITH_CONFIG_PATH=/opt/tasksmith/config/repos.json
 TASKSMITH_PUBLIC_URL=https://tasksmith.tail1a218f.ts.net
-# Optional Postgres metadata/auth foundation:
+# Postgres app-state/auth foundation:
 # TASKSMITH_DATABASE_URL=postgres://tasksmith:<password>@127.0.0.1:5432/tasksmith
+# Better Auth UI/API sessions:
+# TASKSMITH_AUTH_ENABLED=1
+# TASKSMITH_AUTH_SECRET=<32+ random bytes>
+# BETTER_AUTH_URL=https://tasksmith.tail1a218f.ts.net
 # Optional after GitHub/Jira auth is ready:
 # TASKSMITH_SOURCE_POLLING=1
 # TASKSMITH_JIRA_BASE_URL=https://your-site.atlassian.net
@@ -116,6 +120,9 @@ Create `/opt/tasksmith/secrets/tasksmith.env` for app-only environment values. K
 ```bash
 sudo tee /opt/tasksmith/secrets/tasksmith.env >/dev/null <<'EOF'
 TASKSMITH_DATABASE_URL=postgres://tasksmith:<same-password>@127.0.0.1:5432/tasksmith
+TASKSMITH_AUTH_ENABLED=1
+TASKSMITH_AUTH_SECRET=<openssl-rand-base64-32-output>
+BETTER_AUTH_URL=https://tasksmith.tail1a218f.ts.net
 EOF
 sudo chown root:root /opt/tasksmith/secrets/tasksmith.env
 sudo chmod 600 /opt/tasksmith/secrets/tasksmith.env
@@ -127,20 +134,22 @@ The tracked systemd unit includes:
 EnvironmentFile=-/opt/tasksmith/secrets/tasksmith.env
 ```
 
-Apply migrations/sync and restart:
+Apply migrations/sync, bootstrap the first admin, and restart:
 
 ```bash
 cd /opt/tasksmith/app
 pnpm db:migrate
 pnpm db:sync-metadata
+sudo --preserve-env=TASKSMITH_BOOTSTRAP_ADMIN_EMAIL,TASKSMITH_BOOTSTRAP_ADMIN_PASSWORD,TASKSMITH_BOOTSTRAP_ADMIN_NAME \
+  bash -lc 'set -a; . /opt/tasksmith/secrets/tasksmith.env; set +a; cd /opt/tasksmith/app; /usr/local/bin/pnpm auth:bootstrap-admin'
 sudo systemctl daemon-reload
 sudo systemctl restart tasksmith
 curl -fsS http://127.0.0.1:3000/healthz
 ```
 
-The health response reports `storage: "postgres"` when the app is using Postgres for app state. Pi chat/session files, raw Pi event JSONL, logs, artifacts, and workspaces remain under `/opt/tasksmith/data/runs/<run-id>/`; Postgres stores TaskSmith app state, normalized UI events, control messages, and artifact pointers.
+The health response reports `storage: "postgres"` when the app is using Postgres for app state and `auth: "enabled"` when Better Auth protection is active. Pi chat/session files, raw Pi event JSONL, logs, artifacts, and workspaces remain under `/opt/tasksmith/data/runs/<run-id>/`; Postgres stores TaskSmith app state, normalized UI events, control messages, artifact pointers, and Better Auth user/session/account/verification tables.
 
-Security note: the server removes `TASKSMITH_DATABASE_URL` from `process.env` after loading config, and the app env file should be root-owned. This prevents normal child-process env inheritance and direct file reads by the `deploy` user, but same-UID `/proc` exposure is still a hardening gap while Pi bash runs in the app process context. Do not store production/high-value secrets in this database until Pi/tool execution runs under a separate restricted user/container or equivalent isolation.
+Security note: the server removes `TASKSMITH_DATABASE_URL`, `TASKSMITH_AUTH_SECRET`, and `BETTER_AUTH_SECRET` from `process.env` after loading config, and the app env file should be root-owned. This prevents normal child-process env inheritance and direct file reads by the `deploy` user, but same-UID `/proc` exposure is still a hardening gap while Pi bash runs in the app process context. Do not store production/high-value secrets in this database until Pi/tool execution runs under a separate restricted user/container or equivalent isolation.
 
 Backup example:
 
@@ -245,7 +254,7 @@ Browser e2e with `agent-browser` has been run against both the direct SSH tunnel
 /tmp/tasksmith-phase3-tailscale-ui.png
 ```
 
-Before exposing TaskSmith on a real public URL, add Better Auth-backed UI/API authentication. Until then, keep access Tailscale-only or via SSH tunnel. After Better Auth exists, decide whether to keep Tailscale-only access or also route Caddy/Nginx to the API/UI service for public HTTPS.
+Better Auth now protects UI/API/WebSocket surfaces when `TASKSMITH_AUTH_ENABLED=1`. Keep Tailscale-only access unless that flag is enabled with a strong secret, an explicit `BETTER_AUTH_URL`, and a bootstrapped admin user. Separate restricted-user/container isolation is still required before exposing high-value production secrets to agent runs.
 
 ## Docker status
 
@@ -258,4 +267,4 @@ Per-run container/restricted-user isolation is not required for the MVP because 
 - Keep Pi auth, Git deploy keys, Jira tokens, and Git provider tokens narrow.
 - Per-run Pi auth/session directories belong under `/opt/tasksmith/data/runs/<run-id>/`.
 - Do not copy full `/home/deploy` into per-run workspaces.
-- The UI is not exposed publicly until Better Auth-backed authentication is added.
+- Do not expose the UI publicly unless `TASKSMITH_AUTH_ENABLED=1` is set, Better Auth uses HTTPS cookies, and an admin account has been bootstrapped.

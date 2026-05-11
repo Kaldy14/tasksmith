@@ -214,6 +214,13 @@ export interface VerificationConfig {
   defaultCommands: VerificationCommandConfig[];
 }
 
+export interface AuthConfig {
+  enabled: boolean;
+  secret?: string;
+  baseUrl: string;
+  trustedOrigins: string[];
+}
+
 export type NormalizedRunEvent =
   | { type: "run_status"; status: RunStatus; detail?: string }
   | { type: "user_message"; control: ControlKind; text: string; delivery: "received" | "forwarded" | "accepted" | "failed"; error?: string }
@@ -299,6 +306,7 @@ export interface AppConfig {
   publicDir: string;
   publicBaseUrl: string;
   databaseUrl?: string;
+  auth: AuthConfig;
   configFilePath?: string;
   repositories: Record<string, RepositoryConfig>;
   sourceFlow: SourceFlowConfig;

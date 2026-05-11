@@ -22,7 +22,7 @@ Postgres stores:
 - Pull request records.
 - Review records and structured findings.
 - Artifact rows and file pointers.
-- Future Better Auth user/session/account/verification tables, managed by Better Auth migrations.
+- Better Auth user/session/account/verification tables when `TASKSMITH_AUTH_ENABLED=1`.
 
 The filesystem remains authoritative for large/raw/provider-native artifacts:
 
@@ -40,7 +40,7 @@ Local/test deployments may omit `TASKSMITH_DATABASE_URL`; in that mode TaskSmith
 
 Positive:
 
-- Better Auth can be added on the same database foundation.
+- Better Auth uses the same database foundation for UI/API sessions.
 - UI replay no longer depends on parsing JSONL in production mode.
 - Source claims use database uniqueness semantics.
 - Operators can query run/source/event/review/PR metadata in SQL.

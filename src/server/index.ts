@@ -6,6 +6,7 @@ import { FreshContextReviewer } from "../review/fresh-context-reviewer.js";
 import { RuntimeManager } from "../runtime/runtime-manager.js";
 import { DeterministicVerifier } from "../verifier/deterministic-verifier.js";
 import { SourcePoller } from "../sources/source-poller.js";
+import { createTaskSmithAuthService } from "../auth/tasksmith-auth.js";
 import { createTaskSmithServer } from "./http.js";
 
 const config = loadConfig();
@@ -13,6 +14,7 @@ scrubRuntimeSecretsFromProcessEnv();
 const store = new FileStore(config);
 await store.init();
 await store.markActiveRunsFailedOnBoot();
+const auth = createTaskSmithAuthService(config);
 const hub = new EventHub();
 const verifier = new DeterministicVerifier(config.verification, config.repositories);
 const reviewer = new FreshContextReviewer();
@@ -22,16 +24,19 @@ const sourcePoller = new SourcePoller(config, store, runtime);
 if (process.env.TASKSMITH_SOURCE_POLLING === "1" || process.env.TASKSMITH_SOURCE_POLLING === "true") {
   startSourcePolling(sourcePoller, config.sourceFlow.pollIntervalSeconds);
 }
-const server = createTaskSmithServer({ config, store, runtime, sourcePoller, hub });
+const server = createTaskSmithServer({ config, store, runtime, sourcePoller, hub, auth });
 
 server.listen(config.port, config.host, () => {
   console.log(`TaskSmith listening on http://${config.host}:${config.port}`);
   console.log(`Data dir: ${config.dataDir}`);
   console.log(`App state store: ${store.hasMetadataIndex() ? "postgres" : "file-only"}`);
+  console.log(`Auth: ${auth ? "better-auth" : "disabled"}`);
 });
 
 function scrubRuntimeSecretsFromProcessEnv(): void {
   delete process.env.TASKSMITH_DATABASE_URL;
+  delete process.env.TASKSMITH_AUTH_SECRET;
+  delete process.env.BETTER_AUTH_SECRET;
 }
 
 function startSourcePolling(sourcePoller: SourcePoller, intervalSeconds: number): void {
@@ -55,7 +60,7 @@ function startSourcePolling(sourcePoller: SourcePoller, intervalSeconds: number)
 
 function shutdown(): void {
   server.close(() => {
-    void store.close().finally(() => process.exit(0));
+    void Promise.all([store.close(), auth?.close() ?? Promise.resolve()]).finally(() => process.exit(0));
   });
   setTimeout(() => process.exit(0), 5_000).unref();
 }

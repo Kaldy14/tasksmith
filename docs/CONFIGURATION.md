@@ -66,7 +66,7 @@ GET /api/admin/config
 PUT /api/admin/config
 ```
 
-This is an internal/tailnet admin surface until Better Auth is added; do not expose it publicly.
+When `TASKSMITH_AUTH_ENABLED=1`, this admin surface requires a Better Auth session. Without auth, keep it internal/tailnet-only and do not expose it publicly.
 
 ## Workspace initialization commands
 
@@ -163,7 +163,26 @@ pnpm db:migrate        # apply app database migrations only
 pnpm db:sync-metadata  # import/resync legacy file-backed state into Postgres
 ```
 
-Better Auth should use the same Postgres database later, with its own migrations/tables for users, sessions, accounts, and verification tokens.
+## UI/API authentication
+
+TaskSmith can protect the browser UI, `/api/**` routes, WebSocket run streams, `/config`, source polling, and run controls with Better Auth email/password sessions backed by the same Postgres database:
+
+```txt
+TASKSMITH_AUTH_ENABLED=1
+TASKSMITH_AUTH_SECRET=<32+ random bytes>
+BETTER_AUTH_URL=https://tasksmith.example.com
+```
+
+When auth is enabled, `TASKSMITH_DATABASE_URL` is required. Startup migrations create Better Auth's `user`, `session`, `account`, and `verification` tables alongside TaskSmith app-state tables. Public sign-up is disabled; create the first admin with:
+
+```bash
+TASKSMITH_BOOTSTRAP_ADMIN_EMAIL=admin@example.com \
+TASKSMITH_BOOTSTRAP_ADMIN_PASSWORD='<long random passphrase>' \
+TASKSMITH_BOOTSTRAP_ADMIN_NAME='TaskSmith Admin' \
+pnpm auth:bootstrap-admin
+```
+
+Keep `TASKSMITH_AUTH_SECRET` and bootstrap passwords in root-owned env files or one-shot secret input, not in repository config.
 
 GitHub auth for private repositories should be configured for the `deploy` user. The GitHub Issues example config points at `/home/deploy/.config/gh-kaldy14`.
 
