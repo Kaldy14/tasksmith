@@ -95,7 +95,7 @@ export class DemoRuntime implements RuntimeHandle {
   }
 
   private async maybeWriteCiFixDemoChange(): Promise<void> {
-    if (!this.paths || !this.run.prompt.includes("TASKSMITH_DEMO_FIX_CI") || this.run.currentAttemptId === "attempt-1") return;
+    if (!this.paths || !this.run.prompt.includes("TASKSMITH_DEMO_FIX_CI") || (this.run.ciFixAttempts ?? 0) <= 0) return;
     const filePath = path.join(this.paths.workspaceDir, "TASKSMITH_DEMO_CI_FIXED.txt");
     await mkdir(path.dirname(filePath), { recursive: true });
     await writeFile(filePath, `Demo CI fix created by ${this.run.currentAttemptId}\n`, "utf8");

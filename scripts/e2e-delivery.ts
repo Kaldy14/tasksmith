@@ -12,6 +12,8 @@ interface RunResponse {
     id: string;
     status: string;
     title: string;
+    currentAttemptId: string;
+    ciFixAttempts: number;
     pullRequest?: { url: string; number?: number; branch: string; status: string };
     error?: string;
   };
@@ -72,7 +74,7 @@ async function main(): Promise<void> {
       title: "Delivery ready PR e2e",
       repoKey: "delivery-e2e",
       adapter: "demo",
-      prompt: "TASKSMITH_DEMO_WRITE_CHANGE TASKSMITH_DEMO_FIX_CI Produce a deterministic change for PR creation and CI fixup.",
+      prompt: "TASKSMITH_DEMO_WRITE_CHANGE TASKSMITH_DEMO_FIX_VERIFIER TASKSMITH_DEMO_FIX_CI Produce a deterministic change for PR creation, verification fixup, and CI fixup.",
     });
 
     const completed = await waitForRunStatus(baseUrl, created.run.id, "pr_created", 60_000);
@@ -80,6 +82,8 @@ async function main(): Promise<void> {
     assertEqual(completed.run.pullRequest.url, "https://github.com/octo/delivery-fixture/pull/123", "pull request url");
     assertEqual(completed.run.pullRequest.number, 123, "pull request number");
     assertEqual(completed.run.pullRequest.status, "open", "pull request status");
+    assertEqual(completed.run.currentAttemptId, "attempt-3", "verifier and CI fix attempts should use separate runtime attempts");
+    assertEqual(completed.run.ciFixAttempts, 1, "CI fix attempts should be tracked separately from verifier fix attempts");
 
     const pullRequests = await getJson<PullRequestsResponse>(`${baseUrl}/api/pull-requests`);
     const pr = pullRequests.pullRequests.find((candidate) => candidate.runId === created.run.id);
@@ -89,6 +93,7 @@ async function main(): Promise<void> {
     assert(pr.body.includes("Human review is required"), "PR body should require human review");
 
     await assertRemoteBranchContainsChange(remoteRepoDir, pr.branch, tempDir);
+    await assertRemoteBranchContainsVerifierFix(remoteRepoDir, pr.branch, tempDir);
     await assertRemoteBranchContainsCiFix(remoteRepoDir, pr.branch, tempDir);
 
     const events = await getJson<EventsResponse>(`${baseUrl}/api/runs/${created.run.id}/events`);
@@ -158,7 +163,7 @@ function buildConfig(remoteUrl: string, squashRemoteUrl: string): unknown {
         verify: [
           {
             name: "delivery-change-exists",
-            command: `${JSON.stringify(process.execPath)} -e ${JSON.stringify("const fs=require('fs'); if (!fs.existsSync('TASKSMITH_DEMO_CHANGE.txt')) process.exit(2); console.log('DELIVERY_CHANGE_OK');")}`,
+            command: `${JSON.stringify(process.execPath)} -e ${JSON.stringify("const fs=require('fs'); if (!fs.existsSync('TASKSMITH_DEMO_CHANGE.txt')) process.exit(2); if (!fs.existsSync('TASKSMITH_DEMO_VERIFIER_FIXED.txt')) process.exit(3); console.log('DELIVERY_CHANGE_OK');")}`,
             timeoutMs: 30_000,
           },
         ],
@@ -244,6 +249,13 @@ async function assertRemoteBranchContainsChange(remoteRepoDir: string, branch: s
   await runGit(["clone", "--branch", branch, remoteRepoDir, cloneDir], tempDir);
   const change = await readFile(path.join(cloneDir, "TASKSMITH_DEMO_CHANGE.txt"), "utf8");
   assert(change.includes("Demo change created"), "remote PR branch should contain demo change");
+}
+
+async function assertRemoteBranchContainsVerifierFix(remoteRepoDir: string, branch: string, tempDir: string): Promise<void> {
+  const cloneDir = path.join(tempDir, "assert-verifier-fix-clone");
+  await runGit(["clone", "--branch", branch, remoteRepoDir, cloneDir], tempDir);
+  const change = await readFile(path.join(cloneDir, "TASKSMITH_DEMO_VERIFIER_FIXED.txt"), "utf8");
+  assert(change.includes("Demo verifier fix created"), "remote PR branch should contain verifier fix commit");
 }
 
 async function assertRemoteBranchContainsCiFix(remoteRepoDir: string, branch: string, tempDir: string): Promise<void> {

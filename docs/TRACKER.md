@@ -58,7 +58,7 @@ Jira/GitHub issue marked tasksmith
 | M4 — Source pickup | `[~]` | Poll GitHub/Jira, claim issue, create Run, update source | Tagged issue becomes exactly one TaskSmith Run |
 | M5 — PR creation | `[~]` | Commit/push verified diff and create ready-to-review PR | PR links source issue, Run, verification, review summary |
 | M6 — Fresh-context review | `[~]` | Independent review before PR readiness | Findings are structured and severe findings block delivery |
-| M7 — CI fixup | `[ ]` | Watch PR CI and fix failures | Failed CI creates bounded fix attempts |
+| M7 — CI fixup | `[~]` | Watch PR CI and fix failures | Failed CI creates bounded fix attempts |
 | M8 — Hardening | `[ ]` | Security, auth, deployment, observability | Safe enough for internal beta on real repos |
 
 ## M0 — Foundation docs

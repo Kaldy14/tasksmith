@@ -51,6 +51,7 @@ export interface RunRecord {
   pullRequest?: PullRequestSummary;
   status: RunStatus;
   currentAttemptId: string;
+  ciFixAttempts: number;
   runDir: string;
   workspaceDir: string;
   createdAt: string;

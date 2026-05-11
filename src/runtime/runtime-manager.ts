@@ -251,24 +251,26 @@ export class RuntimeManager {
     if (!latest || isTerminalRunStatus(latest.status)) return false;
 
     const currentAttempt = parseAttemptNumber(latest.currentAttemptId);
-    const completedFixAttempts = Math.max(0, currentAttempt - 1);
+    const completedCiFixAttempts = latest.ciFixAttempts ?? 0;
     const maxFixAttempts = this.workflowForRun(latest).maxCiFixAttempts;
-    if (completedFixAttempts >= maxFixAttempts) return false;
+    if (completedCiFixAttempts >= maxFixAttempts) return false;
 
+    const nextCiFixAttempt = completedCiFixAttempts + 1;
     const nextAttempt = currentAttempt + 1;
     const fixPrompt = [
       `GitHub CI failed: ${ciResult.summary}`,
       "",
-      `Start CI fix attempt ${completedFixAttempts + 1} of ${maxFixAttempts}. Make the smallest fix only, then stop. Do not create or merge a pull request.`,
+      `Start CI fix attempt ${nextCiFixAttempt} of ${maxFixAttempts}. Make the smallest fix only, then stop. Do not create or merge a pull request.`,
       ciResult.log ? `\nFailed CI log excerpt:\n${ciResult.log}` : "",
     ].join("\n");
     const updated = await this.store.updateRun(latest.id, {
       status: "fixing",
       currentAttemptId: `attempt-${nextAttempt}`,
+      ciFixAttempts: nextCiFixAttempt,
       prompt: `${latest.prompt}\n\nTaskSmith CI fix request:\n${fixPrompt}`,
     });
     await this.emit(latest.id, { type: "error", message: "CI failed; starting bounded fix attempt", detail: ciResult.summary });
-    await this.emit(latest.id, { type: "run_status", status: "fixing", detail: `CI fix attempt ${completedFixAttempts + 1} of ${maxFixAttempts}: ${ciResult.summary}` });
+    await this.emit(latest.id, { type: "run_status", status: "fixing", detail: `CI fix attempt ${nextCiFixAttempt} of ${maxFixAttempts}: ${ciResult.summary}` });
     await this.emit(latest.id, { type: "user_message", control: "follow_up", text: fixPrompt, delivery: "forwarded" });
     setTimeout(() => {
       void this.runAttempt(updated, this.store.pathsForRun(latest.id), this.createSink(updated), { prepareWorkspace: false });

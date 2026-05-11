@@ -291,6 +291,13 @@ const migrations: readonly Migration[] = [
       sql`CREATE INDEX IF NOT EXISTS verification_identifier_idx ON "verification"(identifier)`,
     ],
   },
+  {
+    version: 5,
+    name: "ci_fix_attempt_counter",
+    statements: [
+      sql`ALTER TABLE tasksmith_runs ADD COLUMN IF NOT EXISTS ci_fix_attempts integer NOT NULL DEFAULT 0`,
+    ],
+  },
 ];
 
 export class PostgresMetadataIndex {
@@ -606,6 +613,7 @@ function runToInsert(run: RunRecord, paths: RunPaths): typeof runs.$inferInsert 
     adapter: run.adapter,
     status: run.status,
     currentAttemptId: run.currentAttemptId,
+    ciFixAttempts: run.ciFixAttempts,
     claimKey: run.claimKey ?? null,
     runDir: run.runDir,
     workspaceDir: run.workspaceDir,
@@ -633,6 +641,7 @@ function runToUpdate(run: RunRecord, paths: RunPaths): Partial<typeof runs.$infe
     adapter: run.adapter,
     status: run.status,
     currentAttemptId: run.currentAttemptId,
+    ciFixAttempts: run.ciFixAttempts,
     claimKey: run.claimKey ?? null,
     runDir: run.runDir,
     workspaceDir: run.workspaceDir,
@@ -661,6 +670,7 @@ function runFromRow(row: RunRow): RunRecord {
     ...(row.pullRequest ? { pullRequest: row.pullRequest } : {}),
     status: row.status as RunStatus,
     currentAttemptId: row.currentAttemptId,
+    ciFixAttempts: row.ciFixAttempts,
     runDir: row.runDir,
     workspaceDir: row.workspaceDir,
     createdAt: row.createdAt,

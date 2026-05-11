@@ -12,6 +12,15 @@ import { redactForStorage } from "../domain/redaction.js";
 
 type CiEmitter = (event: NormalizedRunEvent) => Promise<void>;
 
+interface CiWatchOptions {
+  signal?: AbortSignal;
+}
+
+interface CommandOptions {
+  timeoutMs: number;
+  signal?: AbortSignal;
+}
+
 interface CommandResult {
   code: number | null;
   signal: NodeJS.Signals | null;
@@ -35,6 +44,7 @@ export interface CiWatchResult {
 }
 
 const OUTPUT_LIMIT = 120_000;
+const FORCE_KILL_GRACE_MS = 2_000;
 
 export class GitHubCiWatcher {
   constructor(
@@ -42,7 +52,7 @@ export class GitHubCiWatcher {
     private readonly globalWorkflow: SingleTaskWorkflowConfig,
   ) {}
 
-  async watchPullRequest(run: RunRecord, pullRequest: PullRequestRecord, emit: CiEmitter): Promise<CiWatchResult> {
+  async watchPullRequest(run: RunRecord, pullRequest: PullRequestRecord, emit: CiEmitter, options: CiWatchOptions = {}): Promise<CiWatchResult> {
     const repo = this.repositories[run.repoKey];
     const provider = repo?.gitProvider;
     if (!repo || !provider || provider.type !== "github") {
@@ -59,7 +69,15 @@ export class GitHubCiWatcher {
 
     while (Date.now() <= deadline) {
       pollCount += 1;
-      const checks = await listPullRequestChecks(provider, prRef);
+      assertNotAborted(options.signal);
+      let checks: GitHubCheck[];
+      try {
+        checks = await listPullRequestChecks(provider, prRef, commandOptionsForDeadline(deadline, options.signal));
+      } catch (error: unknown) {
+        const summary = `GitHub CI polling failed: ${error instanceof Error ? error.message : String(error)}`;
+        await emit({ type: "ci", provider: "github", status: "failed", summary, attempt: pollCount });
+        return { status: "failed", summary };
+      }
       if (checks.length === 0) {
         const summary = "No GitHub checks found for this pull request.";
         await emit({ type: "ci", provider: "github", status: "skipped", summary, attempt: pollCount });
@@ -69,7 +87,7 @@ export class GitHubCiWatcher {
       const failed = checks.filter((check) => checkState(check) === "failed");
       if (failed.length > 0) {
         const summary = `${failed.length} GitHub check(s) failed: ${failed.map((check) => check.name).join(", ")}`;
-        const log = await fetchFailedLogs(provider, failed);
+        const log = await fetchFailedLogs(provider, failed, commandOptionsForDeadline(deadline, options.signal));
         const detailsUrl = firstDetailsUrl(failed);
         await emit({
           type: "ci",
@@ -97,7 +115,7 @@ export class GitHubCiWatcher {
         summary: `${pending.length} GitHub check(s) still pending: ${pending.map((check) => check.name).join(", ")}`,
         attempt: pollCount,
       });
-      await delay(Math.min(workflow.ciPollIntervalMs, Math.max(250, deadline - Date.now())));
+      await waitForNextPoll(Math.min(workflow.ciPollIntervalMs, Math.max(250, deadline - Date.now())), options.signal);
     }
 
     const summary = `Timed out after ${workflow.ciTimeoutMs}ms waiting for GitHub checks.`;
@@ -106,7 +124,7 @@ export class GitHubCiWatcher {
   }
 }
 
-async function listPullRequestChecks(provider: GitHubProviderConfig, prRef: string): Promise<GitHubCheck[]> {
+async function listPullRequestChecks(provider: GitHubProviderConfig, prRef: string, options: CommandOptions): Promise<GitHubCheck[]> {
   const result = await runGh([
     "pr",
     "checks",
@@ -115,7 +133,7 @@ async function listPullRequestChecks(provider: GitHubProviderConfig, prRef: stri
     `${provider.owner}/${provider.repo}`,
     "--json",
     "name,bucket,state,conclusion,link,detailsUrl",
-  ], provider);
+  ], provider, options);
   const text = result.stdout.trim();
   if (!text) {
     if (result.code === 0) return [];
@@ -151,7 +169,7 @@ function checkState(check: GitHubCheck): "passed" | "failed" | "pending" {
   return "passed";
 }
 
-async function fetchFailedLogs(provider: GitHubProviderConfig, failedChecks: readonly GitHubCheck[]): Promise<string | undefined> {
+async function fetchFailedLogs(provider: GitHubProviderConfig, failedChecks: readonly GitHubCheck[], options: CommandOptions): Promise<string | undefined> {
   const logs: string[] = [];
   for (const check of failedChecks.slice(0, 3)) {
     const runId = extractActionsRunId(check.detailsUrl ?? check.link ?? "");
@@ -159,7 +177,7 @@ async function fetchFailedLogs(provider: GitHubProviderConfig, failedChecks: rea
       logs.push(`${check.name}: failed; no GitHub Actions run id found (${check.detailsUrl ?? check.link ?? "no details URL"})`);
       continue;
     }
-    const result = await runGh(["run", "view", runId, "--repo", `${provider.owner}/${provider.repo}`, "--log-failed"], provider);
+    const result = await runGh(["run", "view", runId, "--repo", `${provider.owner}/${provider.repo}`, "--log-failed"], provider, options);
     const output = formatCommandOutput(result);
     logs.push(`## ${check.name}\n${output}`);
   }
@@ -180,15 +198,62 @@ function extractActionsRunId(url: string): string | undefined {
   return match?.[1];
 }
 
-async function runGh(args: readonly string[], provider: GitHubProviderConfig): Promise<CommandResult> {
-  return runCommand("gh", args, process.cwd(), commandEnv(provider));
+async function runGh(args: readonly string[], provider: GitHubProviderConfig, options: CommandOptions): Promise<CommandResult> {
+  return runCommand("gh", args, process.cwd(), commandEnv(provider), options);
 }
 
-function runCommand(command: string, args: readonly string[], cwd: string, env: NodeJS.ProcessEnv): Promise<CommandResult> {
+function runCommand(command: string, args: readonly string[], cwd: string, env: NodeJS.ProcessEnv, options: CommandOptions): Promise<CommandResult> {
+  if (options.timeoutMs <= 0) {
+    return Promise.resolve({ code: null, signal: null, stdout: "", stderr: "Command deadline elapsed before start\n" });
+  }
+  if (options.signal?.aborted) {
+    return Promise.resolve({ code: null, signal: null, stdout: "", stderr: "Command aborted before start\n" });
+  }
+
   return new Promise<CommandResult>((resolve) => {
     const child = spawn(command, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
+    let settled = false;
+    let timeout: NodeJS.Timeout | undefined;
+    let forceKill: NodeJS.Timeout | undefined;
+
+    const cleanup = (): void => {
+      if (timeout) clearTimeout(timeout);
+      if (forceKill) clearTimeout(forceKill);
+      options.signal?.removeEventListener("abort", onAbort);
+    };
+
+    const finish = (result: CommandResult): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(result);
+    };
+
+    const terminate = (reason: string): void => {
+      if (settled) return;
+      stderr = appendCapped(stderr, `${reason}\n`);
+      if (!child.kill("SIGTERM")) {
+        finish({ code: null, signal: null, stdout, stderr });
+        return;
+      }
+      forceKill = setTimeout(() => {
+        child.kill("SIGKILL");
+      }, FORCE_KILL_GRACE_MS);
+      forceKill.unref();
+    };
+
+    function onAbort(): void {
+      terminate("Command aborted");
+    }
+
+    timeout = setTimeout(() => {
+      terminate(`Command timed out after ${options.timeoutMs}ms`);
+    }, options.timeoutMs);
+    timeout.unref();
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+
     child.stdout.on("data", (chunk: Buffer) => {
       stdout = appendCapped(stdout, chunk.toString("utf8"));
     });
@@ -197,8 +262,9 @@ function runCommand(command: string, args: readonly string[], cwd: string, env: 
     });
     child.on("error", (error) => {
       stderr = appendCapped(stderr, `${error.message}\n`);
+      finish({ code: null, signal: null, stdout, stderr });
     });
-    child.on("close", (code, signal) => resolve({ code, signal, stdout, stderr }));
+    child.on("close", (code, signal) => finish({ code, signal, stdout, stderr }));
   });
 }
 
@@ -232,4 +298,32 @@ function appendCapped(current: string, next: string): string {
 
 function stringField(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function remainingMs(deadline: number): number {
+  return Math.max(1, deadline - Date.now());
+}
+
+function commandOptionsForDeadline(deadline: number, signal: AbortSignal | undefined): CommandOptions {
+  return {
+    timeoutMs: remainingMs(deadline),
+    ...(signal ? { signal } : {}),
+  };
+}
+
+function assertNotAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) throw new Error("CI polling aborted");
+}
+
+async function waitForNextPoll(ms: number, signal: AbortSignal | undefined): Promise<void> {
+  try {
+    await delay(ms, undefined, signal ? { signal } : undefined);
+  } catch (error: unknown) {
+    if (isAbortError(error)) throw new Error("CI polling aborted");
+    throw error;
+  }
+}
+
+function isAbortError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "name" in error && error.name === "AbortError";
 }
