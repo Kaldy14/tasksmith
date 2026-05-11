@@ -22,7 +22,7 @@ Postgres stores:
 - Pull request records.
 - Review records and structured findings.
 - Artifact rows and file pointers.
-- Future Better Auth user/session/account/verification tables, managed by Better Auth migrations.
+- Better Auth user/session/account/verification tables when `TASKSMITH_AUTH_ENABLED=1`.
 
 The filesystem remains authoritative for large/raw/provider-native artifacts:
 
@@ -40,7 +40,7 @@ Local/test deployments may omit `TASKSMITH_DATABASE_URL`; in that mode TaskSmith
 
 Positive:
 
-- Better Auth can be added on the same database foundation.
+- Better Auth uses the same database foundation for UI/API sessions.
 - UI replay no longer depends on parsing JSONL in production mode.
 - Source claims use database uniqueness semantics.
 - Operators can query run/source/event/review/PR metadata in SQL.
@@ -61,3 +61,4 @@ Negative:
 - [x] UI/API reads run state and normalized events from Postgres in DB mode.
 - [x] Pi session/chat files and raw Pi event JSONL remain on disk and are referenced by artifact paths.
 - [x] Dockerized Postgres deployment is documented for the dedicated TaskSmith host.
+- [x] With `TASKSMITH_AUTH_ENABLED=1` and `TASKSMITH_DATABASE_URL` pointed at test Postgres, migrations create queryable Better Auth `user`, `session`, `account`, and `verification` tables; auth e2e signs up a user, signs in, and verifies session-backed API access.

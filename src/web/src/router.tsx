@@ -6,9 +6,12 @@ import {
   createRoute,
   createRouter,
   useParams,
+  useRouterState,
 } from "@tanstack/react-router";
+import { getPublicConfig } from "@/api";
 import { Anvil } from "@/components/anvil";
 import { ConfigPage } from "@/components/config-page";
+import { LoginPage } from "@/components/login-page";
 import { ProjectRail } from "@/components/project-rail";
 import { useRuns } from "@/hooks/use-runs";
 import type { ConnectionStatus } from "@/types";
@@ -28,8 +31,24 @@ function useShellContext(): ShellContextValue {
 }
 
 function RootShell() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const isLogin = pathname === "/login";
   const [connection, setConnection] = useState<ConnectionStatus>("idle");
-  const { runs, loading, refresh } = useRuns();
+  const [authEnabled, setAuthEnabled] = useState(false);
+  const { runs, loading, refresh } = useRuns({ enabled: !isLogin });
+
+  useEffect(() => {
+    if (isLogin) return;
+    let cancelled = false;
+    void getPublicConfig()
+      .then((config) => {
+        if (!cancelled) setAuthEnabled(config.auth.enabled);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [isLogin]);
 
   const refreshRuns = useCallback(() => {
     void refresh();
@@ -40,6 +59,8 @@ function RootShell() {
     [refreshRuns],
   );
 
+  if (isLogin) return <Outlet />;
+
   return (
     <ShellContext.Provider value={shellValue}>
       <div className="flex h-screen min-h-0 overflow-hidden bg-background text-foreground">
@@ -47,6 +68,7 @@ function RootShell() {
           runs={runs}
           loading={loading}
           connection={connection}
+          authEnabled={authEnabled}
           onCreated={refreshRuns}
         />
         <main className="flex min-w-0 flex-1 flex-col">
@@ -98,7 +120,13 @@ const configRoute = createRoute({
   component: ConfigRoute,
 });
 
-const routeTree = rootRoute.addChildren([indexRoute, runRoute, configRoute]);
+const loginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/login",
+  component: LoginPage,
+});
+
+const routeTree = rootRoute.addChildren([indexRoute, runRoute, configRoute, loginRoute]);
 
 export const router = createRouter({
   routeTree,

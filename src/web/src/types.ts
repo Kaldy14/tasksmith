@@ -95,6 +95,7 @@ export interface EditableConfigResponse {
 }
 
 export interface PublicAppConfig {
+  auth: { enabled: boolean };
   repositories: RepositorySummary[];
   sourceFlow: {
     readinessLabel: string;

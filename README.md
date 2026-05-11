@@ -78,7 +78,8 @@ Manual Run, deterministic verification, GitHub/Jira source pickup, fresh-context
 - deterministic verifier events and redacted logs,
 - fresh-context diff review with structured findings and blocking severe findings,
 - ready-to-review GitHub PR creation after verification/review for configured repositories,
-- Postgres app-state storage via `TASKSMITH_DATABASE_URL` while Pi chats, raw events, logs, workspaces, and large artifacts remain file-backed.
+- Postgres app-state storage via `TASKSMITH_DATABASE_URL` while Pi chats, raw events, logs, workspaces, and large artifacts remain file-backed,
+- optional Better Auth email/password protection for UI/API/WebSocket control surfaces via `TASKSMITH_AUTH_ENABLED=1`.
 
 See:
 
@@ -99,5 +100,6 @@ pnpm e2e:config-init
 pnpm e2e:review
 pnpm e2e:pi-spike
 pnpm e2e:postgres-index   # skips unless TASKSMITH_TEST_DATABASE_URL is set
+pnpm e2e:auth             # skips unless TASKSMITH_TEST_DATABASE_URL is set
 TASKSMITH_REAL_PI_E2E=1 pnpm e2e:pi-spike
 ```

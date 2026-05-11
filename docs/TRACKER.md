@@ -2,9 +2,9 @@
 
 ## Current status
 
-**Stage:** Phase 6 — Fresh-context review foundation  
-**Code status:** Manual Run, verifier, bounded verifier fix attempts, source pickup, per-repo init commands, config UI, fresh-context review, ready-to-review GitHub PR delivery, and Postgres app-state foundation implemented  
-**Primary next milestone:** Better Auth on Postgres, then extend bounded fix attempts to review findings and CI fixup.
+**Stage:** Phase 8 — hardening foundation  
+**Code status:** Manual Run, verifier, bounded verifier fix attempts, source pickup, per-repo init commands, config UI, fresh-context review, ready-to-review GitHub PR delivery, Postgres app state, and Better Auth UI/API protection implemented  
+**Primary next milestone:** restricted-user/container worker isolation, then extend bounded fix attempts to review findings and CI fixup.
 
 TaskSmith currently has durable product/architecture docs, ADRs, research references, and implementation briefs. The next work should be a technical spike, not a full app scaffold.
 
@@ -321,12 +321,12 @@ After PR creation, TaskSmith watches CI checks and performs bounded fix attempts
 
 ## M8 — Hardening and internal beta
 
-**Status:** `[ ]` Not started  
+**Status:** `[~]` In progress  
 **Type:** production readiness
 
 ### Tasks
 
-- [ ] Add Better Auth for UI/API before exposing a real public URL.
+- [x] Add Better Auth for UI/API before exposing a real public URL.
 - [ ] Add role/policy for who can steer/abort/rerun.
 - [ ] Implement secret redaction tests.
 - [ ] Review stronger sandbox isolation as a future hardening improvement; MVP runs on a dedicated TaskSmith server.

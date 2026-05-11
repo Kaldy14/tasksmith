@@ -43,6 +43,7 @@ export function loadConfig(): AppConfig {
     publicDir: path.join(repoRoot, "dist", "web"),
     publicBaseUrl: parsePublicBaseUrl(process.env.TASKSMITH_PUBLIC_URL, process.env.HOST ?? "0.0.0.0", process.env.PORT ?? "3000"),
     ...(databaseUrl ? { databaseUrl } : {}),
+    auth: parseAuthConfig(databaseUrl, process.env.HOST ?? "0.0.0.0", process.env.PORT ?? "3000"),
     ...(configFilePath ? { configFilePath } : {}),
     repositories: fileConfig?.repos ?? {},
     sourceFlow: fileConfig?.sourceFlow ?? defaultSourceFlow(),
@@ -340,6 +341,52 @@ function parseTimeout(value: unknown, label: string): number {
     throw new Error(`${label} must be an integer between 1 and 3600000`);
   }
   return value;
+}
+
+function parseAuthConfig(databaseUrl: string | undefined, host: string, port: string): AppConfig["auth"] {
+  const enabled = parseBooleanEnv(process.env.TASKSMITH_AUTH_ENABLED);
+  const secret = (process.env.TASKSMITH_AUTH_SECRET ?? process.env.BETTER_AUTH_SECRET)?.trim();
+  const baseUrl = (process.env.BETTER_AUTH_URL ?? process.env.TASKSMITH_AUTH_URL)?.trim()
+    || parsePublicBaseUrl(process.env.TASKSMITH_PUBLIC_URL, host, port);
+  const normalizedBaseUrl = baseUrl.replace(/\/$/, "");
+  const trustedOrigins = parseTrustedOrigins(baseUrl, process.env.TASKSMITH_AUTH_TRUSTED_ORIGINS, host, port);
+  if (enabled) {
+    if (!databaseUrl) throw new Error("TASKSMITH_DATABASE_URL is required when TASKSMITH_AUTH_ENABLED=1");
+    if (!secret || Buffer.byteLength(secret, "utf8") < 32) {
+      throw new Error("TASKSMITH_AUTH_SECRET or BETTER_AUTH_SECRET must be at least 32 bytes when TASKSMITH_AUTH_ENABLED=1");
+    }
+    return {
+      enabled: true,
+      secret,
+      baseUrl: normalizedBaseUrl,
+      trustedOrigins,
+    };
+  }
+  return {
+    enabled: false,
+    baseUrl: normalizedBaseUrl,
+    trustedOrigins,
+  };
+}
+
+function parseBooleanEnv(value: string | undefined): boolean {
+  return value === "1" || value === "true" || value === "yes";
+}
+
+function parseTrustedOrigins(baseUrl: string, raw: string | undefined, host: string, port: string): string[] {
+  const origins = new Set<string>();
+  origins.add(originOf(baseUrl));
+  origins.add(originOf(parsePublicBaseUrl(undefined, host, port)));
+  origins.add(originOf(parsePublicBaseUrl(undefined, "localhost", port)));
+  for (const entry of raw?.split(/[\s,]+/) ?? []) {
+    const trimmed = entry.trim().replace(/\/$/, "");
+    if (trimmed) origins.add(trimmed);
+  }
+  return [...origins];
+}
+
+function originOf(value: string): string {
+  return new URL(value).origin;
 }
 
 function parseOptionalDatabaseUrl(value: string | undefined): string | undefined {
