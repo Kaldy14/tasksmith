@@ -55,35 +55,41 @@ export function createTaskSmithAuthService(
     connectionString: config.databaseUrl,
     application_name: "tasksmith-auth",
   });
-  const db: NodePgDatabase<typeof authSchema> = drizzle(pool, { schema: authSchema });
-  const auth = betterAuth({
-    appName: "TaskSmith",
-    baseURL: config.auth.baseUrl,
-    trustedOrigins: config.auth.trustedOrigins,
-    secret: config.auth.secret,
-    database: drizzleAdapter(db, {
-      provider: "pg",
-      schema: authSchema,
-    }),
-    emailAndPassword: {
-      enabled: true,
-      disableSignUp: options.allowSignUp !== true,
-      minPasswordLength: 12,
-      maxPasswordLength: 128,
-      autoSignIn: false,
-    },
-    session: {
-      expiresIn: 60 * 60 * 24 * 7,
-      updateAge: 60 * 60 * 24,
-    },
-    advanced: {
-      cookiePrefix: "tasksmith",
-      useSecureCookies: config.auth.baseUrl.startsWith("https://"),
-      defaultCookieAttributes: {
-        sameSite: "lax",
-      },
-    },
-  });
 
-  return new TaskSmithAuthService(auth as Auth, pool);
+  try {
+    const db: NodePgDatabase<typeof authSchema> = drizzle(pool, { schema: authSchema });
+    const auth = betterAuth({
+      appName: "TaskSmith",
+      baseURL: config.auth.baseUrl,
+      trustedOrigins: config.auth.trustedOrigins,
+      secret: config.auth.secret,
+      database: drizzleAdapter(db, {
+        provider: "pg",
+        schema: authSchema,
+      }),
+      emailAndPassword: {
+        enabled: true,
+        disableSignUp: options.allowSignUp !== true,
+        minPasswordLength: 12,
+        maxPasswordLength: 128,
+        autoSignIn: false,
+      },
+      session: {
+        expiresIn: 60 * 60 * 24 * 7,
+        updateAge: 60 * 60 * 24,
+      },
+      advanced: {
+        cookiePrefix: "tasksmith",
+        useSecureCookies: config.auth.baseUrl.startsWith("https://"),
+        defaultCookieAttributes: {
+          sameSite: "lax",
+        },
+      },
+    });
+
+    return new TaskSmithAuthService(auth as Auth, pool);
+  } catch (error: unknown) {
+    void pool.end().catch(() => undefined);
+    throw error;
+  }
 }
