@@ -65,7 +65,15 @@ export function LoginPage() {
                 required
               />
             </div>
-            {error ? <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p> : null}
+            {error ? (
+              <p
+                className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+                role="alert"
+                aria-live="polite"
+              >
+                {error}
+              </p>
+            ) : null}
             <Button className="w-full" type="submit" disabled={submitting}>
               {submitting ? "Signing in..." : "Sign in"}
             </Button>
