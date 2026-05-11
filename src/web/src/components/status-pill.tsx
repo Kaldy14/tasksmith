@@ -10,6 +10,7 @@ const STATUS_LABEL: Record<RunStatus, string> = {
   verifying: "verifying",
   fixing: "fixing",
   reviewing: "reviewing",
+  delivering: "delivering",
   creating_pr: "creating PR",
   pr_created: "PR created",
   completed: "completed",
@@ -18,7 +19,7 @@ const STATUS_LABEL: Record<RunStatus, string> = {
 };
 
 function variantFor(status: RunStatus): "running" | "completed" | "failed" | "waiting" | "queued" {
-  if (status === "running" || status === "preparing" || status === "verifying" || status === "fixing" || status === "reviewing" || status === "creating_pr") return "running";
+  if (status === "running" || status === "preparing" || status === "verifying" || status === "fixing" || status === "reviewing" || status === "delivering" || status === "creating_pr") return "running";
   if (status === "completed" || status === "pr_created") return "completed";
   if (status === "failed" || status === "cancelled") return "failed";
   if (status === "waiting_for_control") return "waiting";

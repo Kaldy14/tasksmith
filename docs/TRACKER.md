@@ -232,15 +232,15 @@ A GitHub issue or Jira issue matching configured readiness criteria creates exac
 - [ ] Jira status/labels reflect claimed/running/failed/pr-created.
 - [~] Repo routing works for GitHub Issues repos by configured repo and for Jira labels in e2e; real `vosime-admin`/`core-hub` auth/config still need validation.
 
-## M5 — PR creation
+## M5 — Delivery: PR creation or explicit direct merge
 
-**Status:** `[~]` GitHub ready-PR foundation implemented  
+**Status:** `[~]` GitHub ready-PR and explicit squash-merge foundations implemented  
 **Type:** delivery integration  
 **Inspired by:** CodeForge PR service, Kandev PR phase
 
 ### Goal
 
-Turn verified changes into a ready-to-review PR and link it back to the source issue.
+Turn verified and reviewed changes into either a ready-to-review PR or an explicit `squash_merge_main` direct delivery, then link the result back to the source issue when credentials are available.
 
 ### Tasks
 
@@ -251,18 +251,20 @@ Turn verified changes into a ready-to-review PR and link it back to the source i
 - [x] Detect changed files and block empty PRs.
 - [x] Create branch from base branch.
 - [x] Commit changes.
-- [x] Push branch.
-- [x] Create ready-to-review PR without `--draft`.
+- [x] Push delivery branch or direct target branch without force.
+- [x] Create ready-to-review PR without `--draft` in `ready_pr` mode.
+- [x] Implement explicit `squash_merge_main` direct delivery with a single TaskSmith commit and non-forced push to the target branch.
 - [~] Generate PR body with source link, Run link, verification summary, and review placeholder; real review summary pending M6.
-- [x] Store PR metadata.
-- [x] Update GitHub/Jira source issue with PR link comment when credentials are available.
+- [x] Store PR metadata for PR delivery.
+- [x] Update GitHub/Jira source issue with PR or direct-merge comment when credentials are available.
 
 ### Exit gate
 
 - [x] Verified Run produces ready-to-review PR in delivery e2e.
+- [x] Verified Run can use explicit `squash_merge_main` to push one TaskSmith commit to the configured target branch in delivery e2e.
 - [x] PR body has enough context for human review, including AI-generated marker.
-- [~] Jira/GitHub source issues receive PR link comments; real Jira status/label transitions remain pending.
-- [x] No auto-merge exists in MVP.
+- [~] Jira/GitHub source issues receive PR/direct-merge comments; real Jira status/label transitions remain pending.
+- [x] Auto-merge is not the default; direct merge requires explicit `squash_merge_main` config.
 
 ## M6 — Fresh-context review
 

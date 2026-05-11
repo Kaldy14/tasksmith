@@ -45,6 +45,19 @@
         ],
         "state": "open"
       },
+      "workflow": {
+        "type": "single_task_sandcastle",
+        "stages": [
+          "plan",
+          "implement",
+          "deep_review",
+          "fix",
+          "deliver"
+        ],
+        "maxFixAttempts": 1,
+        "deliveryMode": "squash_merge_main",
+        "mergeTargetBranch": "main"
+      },
       "verify": [
         {
           "name": "verify",

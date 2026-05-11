@@ -34,8 +34,10 @@ TaskSmith should be built around **Runs** and **Events**, not around raw agent p
 11. Verifier runs deterministic checks.
 12. If checks fail, worker starts a fix attempt with logs.
 13. Reviewer performs fresh-context diff review.
-14. PR Creator opens ready-to-review PR.
-15. Jira Updater comments/transitions issue.
+14. Orchestrator enters delivery only after verification and review pass and the Run is not terminal/cancelled.
+15. For `ready_pr`, PR Creator must push a TaskSmith branch, open a ready-to-review PR, persist PR metadata, and transition the Run to `pr_created`.
+16. For explicit `squash_merge_main`, delivery must create one TaskSmith commit, push it without force to the configured target branch, emit the commit URL/SHA, and transition the Run to `completed`.
+17. Jira/GitHub updater comments/transitions the source issue when credentials are available.
 ```
 
 ## Component diagram
@@ -170,6 +172,7 @@ waiting_for_user
 verifying
 fixing
 reviewing
+delivering
 creating_pr
 pr_created
 failed

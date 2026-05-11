@@ -34,13 +34,15 @@ async function main(): Promise<void> {
   const binDir = path.join(tempDir, "bin");
   const ghLogPath = path.join(tempDir, "gh-calls.jsonl");
   const remoteRepoDir = path.join(tempDir, "remote.git");
+  const squashRemoteRepoDir = path.join(tempDir, "squash-remote.git");
   const configPath = path.join(tempDir, "tasksmith-config.json");
   const port = 36_210 + Math.floor(Math.random() * 1000);
 
   await mkdir(binDir, { recursive: true });
   await writeFakeGh(path.join(binDir, "gh"), ghLogPath);
   await createBareFixtureRemote(tempDir, remoteRepoDir);
-  await writeFile(configPath, JSON.stringify(buildConfig(pathToFileURL(remoteRepoDir).href), null, 2), "utf8");
+  await createBareFixtureRemote(tempDir, squashRemoteRepoDir);
+  await writeFile(configPath, JSON.stringify(buildConfig(pathToFileURL(remoteRepoDir).href, pathToFileURL(squashRemoteRepoDir).href), null, 2), "utf8");
 
   const server = spawn(tsxBin, [serverScript], {
     cwd: rootDir,
@@ -93,8 +95,24 @@ async function main(): Promise<void> {
     assert(eventText.includes('"status":"created"'), "events should include created delivery status");
     assert(eventText.includes("gh pr create"), "events should include gh pr create command");
 
+    const squashCreated = await postJson<RunResponse>(`${baseUrl}/api/runs`, {
+      title: "Delivery squash merge e2e",
+      repoKey: "squash-e2e",
+      adapter: "demo",
+      prompt: "TASKSMITH_DEMO_WRITE_CHANGE Produce a deterministic change for direct merge.",
+    });
+    const squashCompleted = await waitForRunStatus(baseUrl, squashCreated.run.id, "completed", 30_000);
+    assert(squashCompleted.run.pullRequest === undefined, "squash merge run should not record a pull request");
+    await assertRemoteBranchContainsChange(squashRemoteRepoDir, "main", tempDir, "assert-squash-clone");
+
+    const squashEvents = await getJson<EventsResponse>(`${baseUrl}/api/runs/${squashCreated.run.id}/events`);
+    const squashEventText = JSON.stringify(squashEvents);
+    assert(squashEventText.includes('"mode":"squash_merge_main"'), "events should include squash_merge_main delivery mode");
+    assert(squashEventText.includes("Squash-merged to main"), "events should include squash merge summary");
+    assert(squashEventText.includes("git push origin HEAD:refs/heads/main"), "events should include direct push command");
+
     const ghLog = await readFile(ghLogPath, "utf8");
-    assert(ghLog.includes('"pr","create"'), "gh pr create should be called");
+    assert(countOccurrences(ghLog, '"pr","create"') === 1, "gh pr create should only be called for ready_pr delivery");
     assert(!ghLog.includes('"--draft"'), "gh pr create must not use --draft");
     assert(ghLog.includes("ready-to-review"), "gh pr create body should say ready-to-review");
 
@@ -113,7 +131,7 @@ async function main(): Promise<void> {
   }
 }
 
-function buildConfig(remoteUrl: string): unknown {
+function buildConfig(remoteUrl: string, squashRemoteUrl: string): unknown {
   return {
     workflow: {
       type: "single_task_sandcastle",
@@ -131,6 +149,26 @@ function buildConfig(remoteUrl: string): unknown {
           {
             name: "delivery-change-exists",
             command: `${JSON.stringify(process.execPath)} -e ${JSON.stringify("const fs=require('fs'); if (!fs.existsSync('TASKSMITH_DEMO_CHANGE.txt')) process.exit(2); console.log('DELIVERY_CHANGE_OK');")}`,
+            timeoutMs: 30_000,
+          },
+        ],
+      },
+      "squash-e2e": {
+        displayName: "Squash Merge E2E",
+        gitUrl: squashRemoteUrl,
+        defaultBranch: "main",
+        gitProvider: { type: "github", owner: "octo", repo: "squash-fixture", ghConfigDir: "/tmp/fake-gh-config" },
+        workflow: {
+          type: "single_task_sandcastle",
+          stages: ["plan", "implement", "deep_review", "fix", "deliver"],
+          maxFixAttempts: 1,
+          deliveryMode: "squash_merge_main",
+          mergeTargetBranch: "main",
+        },
+        verify: [
+          {
+            name: "squash-change-exists",
+            command: `${JSON.stringify(process.execPath)} -e ${JSON.stringify("const fs=require('fs'); if (!fs.existsSync('TASKSMITH_DEMO_CHANGE.txt')) process.exit(2); console.log('SQUASH_CHANGE_OK');")}`,
             timeoutMs: 30_000,
           },
         ],
@@ -160,7 +198,7 @@ process.exit(2);
 }
 
 async function createBareFixtureRemote(tempDir: string, remoteRepoDir: string): Promise<void> {
-  const seedDir = path.join(tempDir, "seed");
+  const seedDir = path.join(tempDir, `seed-${path.basename(remoteRepoDir, ".git")}`);
   await runGit(["init", "--bare", remoteRepoDir], tempDir);
   await mkdir(seedDir, { recursive: true });
   await runGit(["init", "-b", "main"], seedDir);
@@ -171,8 +209,8 @@ async function createBareFixtureRemote(tempDir: string, remoteRepoDir: string): 
   await runGit(["push", "-u", "origin", "main"], seedDir);
 }
 
-async function assertRemoteBranchContainsChange(remoteRepoDir: string, branch: string, tempDir: string): Promise<void> {
-  const cloneDir = path.join(tempDir, "assert-clone");
+async function assertRemoteBranchContainsChange(remoteRepoDir: string, branch: string, tempDir: string, cloneName = "assert-clone"): Promise<void> {
+  const cloneDir = path.join(tempDir, cloneName);
   await runGit(["clone", "--branch", branch, remoteRepoDir, cloneDir], tempDir);
   const change = await readFile(path.join(cloneDir, "TASKSMITH_DEMO_CHANGE.txt"), "utf8");
   assert(change.includes("Demo change created"), "remote PR branch should contain demo change");
@@ -231,6 +269,10 @@ async function parseResponse<T>(response: Response): Promise<T> {
   const body = text ? JSON.parse(text) as T : {} as T;
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${text}`);
   return body;
+}
+
+function countOccurrences(text: string, needle: string): number {
+  return text.split(needle).length - 1;
 }
 
 function assert(value: boolean, message: string): asserts value {
