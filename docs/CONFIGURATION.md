@@ -287,18 +287,29 @@ or:
 
 `ready_pr` is the safe default and creates a non-draft, ready-to-review PR. `squash_merge_main` is an explicit delivery mode for deployments/repos where direct merge is desired. Older configs containing `draft_pr` are accepted as a compatibility alias for `ready_pr`; update them when touched.
 
-Ready PR delivery currently requires:
+Ready PR delivery requires:
 
 - `gitUrl`, so TaskSmith can clone and push a branch,
 - `gitProvider.type = "github"`,
 - `gitProvider.owner` and `gitProvider.repo`,
 - a working `gh` auth profile via `gitProvider.ghConfigDir` when the repo is private or PR creation requires auth.
 
+Squash-merge delivery requires:
+
+- `gitUrl`, so TaskSmith can clone and push the target branch,
+- `mergeTargetBranch` or `defaultBranch` to identify the direct-push branch; when both are absent, TaskSmith uses `main`,
+- branch protection/GitHub permissions that allow the configured TaskSmith Git credentials to push without force,
+- optional `gitProvider` metadata when source issue comments should include a GitHub commit URL.
+
+The personal example config opts the `tasksmith` repository into `squash_merge_main` while leaving other repositories on the global `ready_pr` default.
+
 If deterministic verification fails, TaskSmith checks `repos.<repoKey>.workflow.maxFixAttempts` first, then the global `workflow.maxFixAttempts`. When the limit is greater than zero, the Run enters `fixing`, advances to the next attempt id (for example `attempt-2`), gives the runtime a follow-up containing the verifier summary and a smallest-fix-only instruction, and reruns verification after that attempt completes. No PR is created during verifier-fix attempts. If the configured attempts are exhausted, the Run fails with the verifier summary.
 
 After verification passes, TaskSmith runs a fresh-context diff review before delivery. The current reviewer is a deterministic guardrail pass over the final workspace diff: it persists `review-diff.patch` and `review-diff-stat.txt`, emits structured findings, and blocks delivery on `high` or `critical` findings such as secret-looking values or local env/dependency files. Review metadata is stored in `state/reviews.json` and exposed at `GET /api/reviews` and `GET /api/runs/:id/review`.
 
-If verification and review pass, TaskSmith checks for a non-empty diff, creates a branch named `tasksmith/<source-or-title>-<run-suffix>`, commits all workspace changes with the TaskSmith bot identity, pushes the branch, and runs `gh pr create` without `--draft`. PR metadata is stored in `state/pull-requests.json` and exposed at `GET /api/pull-requests`. Source issues receive a PR-link comment when credentials are available.
+If verification and review pass in `ready_pr` mode, TaskSmith checks for a non-empty diff, creates a branch named `tasksmith/<source-or-title>-<run-suffix>`, commits all workspace changes with the TaskSmith bot identity, pushes the branch, and runs `gh pr create` without `--draft`. PR metadata is stored in `state/pull-requests.json` and exposed at `GET /api/pull-requests`. Source issues receive a PR-link comment when credentials are available.
+
+If verification and review pass in `squash_merge_main` mode, TaskSmith checks for a non-empty diff, commits all workspace changes as one TaskSmith commit, and pushes `HEAD` to `refs/heads/<mergeTargetBranch>` without force. The Run completes with a delivery event containing the target branch and commit URL/SHA. Source issues receive a direct-merge comment when credentials are available.
 
 ## Verification precedence
 

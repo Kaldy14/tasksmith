@@ -44,12 +44,18 @@ export class PullRequestDelivery {
   async deliver(run: RunRecord, paths: RunPaths, review: ReviewRecord, emit: DeliveryEmitter): Promise<DeliveryResult> {
     const repo = this.config.repositories[run.repoKey];
     const workflow = repo?.workflow ?? this.config.workflow;
-    if (workflow.deliveryMode === "squash_merge_main") {
-      await emit({ type: "delivery", mode: workflow.deliveryMode, status: "failed", detail: "squash_merge_main delivery is not implemented yet" });
-      throw new Error("squash_merge_main delivery is not implemented yet");
+
+    if (!repo?.gitUrl) {
+      const summary = "No git delivery configured for this repository.";
+      await emit({ type: "delivery", mode: workflow.deliveryMode, status: "skipped", detail: summary });
+      return { status: "skipped", summary };
     }
 
-    if (!repo?.gitUrl || !repo.gitProvider) {
+    if (workflow.deliveryMode === "squash_merge_main") {
+      return this.deliverSquashMergeMain(run, paths, repo, review, emit);
+    }
+
+    if (!repo.gitProvider) {
       const summary = "No GitHub PR delivery configured for this repository.";
       await emit({ type: "delivery", mode: workflow.deliveryMode, status: "skipped", detail: summary });
       return { status: "skipped", summary };
@@ -144,6 +150,96 @@ export class PullRequestDelivery {
     });
     return { status: "created", summary, pullRequest };
   }
+
+  private async deliverSquashMergeMain(
+    run: RunRecord,
+    paths: RunPaths,
+    repo: RepositoryConfig,
+    review: ReviewRecord,
+    emit: DeliveryEmitter,
+  ): Promise<DeliveryResult> {
+    const workflow = repo.workflow ?? this.config.workflow;
+    const targetBranch = workflow.mergeTargetBranch ?? repo.defaultBranch ?? "main";
+    const provider = repo.gitProvider?.type === "github" ? "github" : undefined;
+    await emit({
+      type: "delivery",
+      mode: "squash_merge_main",
+      status: "running",
+      ...(provider ? { provider } : {}),
+      branch: targetBranch,
+      detail: `Preparing squash merge to ${targetBranch}`,
+    });
+
+    const changedFiles = parseChangedFiles((await runGit(["status", "--porcelain=v1", "--untracked-files=all"], paths.workspaceDir, repo)).stdout);
+    if (changedFiles.length === 0) {
+      const existingCommitSha = await readLocalTaskSmithCommitSha(run, paths.workspaceDir, repo);
+      if (existingCommitSha) {
+        const remoteCommitSha = await readRemoteBranchSha(targetBranch, paths.workspaceDir, repo);
+        if (remoteCommitSha === existingCommitSha) {
+          return this.completeSquashMerge(run, repo, targetBranch, existingCommitSha, review, emit, { alreadyPushed: true });
+        }
+        await emitCommand(emit, `git push origin HEAD:refs/heads/${targetBranch}`, runGit(["push", "origin", `HEAD:refs/heads/${targetBranch}`], paths.workspaceDir, repo));
+        return this.completeSquashMerge(run, repo, targetBranch, existingCommitSha, review, emit);
+      }
+      await emit({
+        type: "delivery",
+        mode: "squash_merge_main",
+        status: "failed",
+        ...(provider ? { provider } : {}),
+        branch: targetBranch,
+        detail: "No workspace changes to deliver",
+      });
+      throw new Error("No workspace changes to deliver");
+    }
+
+    await emitCommand(emit, "git add -A", runGit(["add", "-A"], paths.workspaceDir, repo));
+    await emitCommand(
+      emit,
+      `git commit -m ${JSON.stringify(commitSubject(run))}`,
+      runGit([
+        "-c",
+        "user.name=TaskSmith",
+        "-c",
+        "user.email=tasksmith@example.invalid",
+        "commit",
+        "-m",
+        commitSubject(run),
+        "-m",
+        buildSquashMergeCommitBody(run, changedFiles, review, this.config.publicBaseUrl),
+      ], paths.workspaceDir, repo),
+    );
+    await emitCommand(emit, `git push origin HEAD:refs/heads/${targetBranch}`, runGit(["push", "origin", `HEAD:refs/heads/${targetBranch}`], paths.workspaceDir, repo));
+
+    const commitSha = (await emitCommand(emit, "git rev-parse HEAD", runGit(["rev-parse", "HEAD"], paths.workspaceDir, repo))).stdout.trim();
+    return this.completeSquashMerge(run, repo, targetBranch, commitSha, review, emit);
+  }
+
+  private async completeSquashMerge(
+    run: RunRecord,
+    repo: RepositoryConfig,
+    targetBranch: string,
+    commitSha: string,
+    review: ReviewRecord,
+    emit: DeliveryEmitter,
+    options: { alreadyPushed?: boolean } = {},
+  ): Promise<DeliveryResult> {
+    const provider = repo.gitProvider?.type === "github" ? "github" : undefined;
+    const commitUrl = repo.gitProvider ? buildGitHubCommitUrl(repo.gitProvider, commitSha) : undefined;
+    const sourceUpdateError = options.alreadyPushed ? undefined : await updateSourceWithSquashMerge(run, repo.gitProvider, targetBranch, commitSha, commitUrl, review, this.config.publicBaseUrl);
+    const summary = options.alreadyPushed
+      ? `Squash merge already present on ${targetBranch}: ${commitUrl ?? commitSha}`
+      : `Squash-merged to ${targetBranch}: ${commitUrl ?? commitSha}`;
+    await emit({
+      type: "delivery",
+      mode: "squash_merge_main",
+      status: "created",
+      ...(provider ? { provider } : {}),
+      branch: targetBranch,
+      ...(commitUrl ? { url: commitUrl } : {}),
+      detail: sourceUpdateError ? `${summary}\nSource update failed: ${sourceUpdateError}` : summary,
+    });
+    return { status: "created", summary };
+  }
 }
 
 async function emitCommand(emit: DeliveryEmitter, command: string, promise: Promise<CommandResult>): Promise<CommandResult> {
@@ -214,6 +310,26 @@ function buildPullRequestTitle(run: RunRecord): string {
   return `${prefix}${run.title}`.slice(0, 180);
 }
 
+async function readLocalTaskSmithCommitSha(run: RunRecord, cwd: string, repo: RepositoryConfig): Promise<string | undefined> {
+  const subject = await runGit(["log", "-1", "--format=%s"], cwd, repo);
+  if (subject.code !== 0 || subject.stdout.trim() !== commitSubject(run)) return undefined;
+  const sha = await runGit(["rev-parse", "HEAD"], cwd, repo);
+  if (sha.code !== 0) return undefined;
+  const trimmed = sha.stdout.trim();
+  return isCommitSha(trimmed) ? trimmed : undefined;
+}
+
+async function readRemoteBranchSha(targetBranch: string, cwd: string, repo: RepositoryConfig): Promise<string | undefined> {
+  const result = await runGit(["ls-remote", "origin", `refs/heads/${targetBranch}`], cwd, repo);
+  if (result.code !== 0) return undefined;
+  const sha = result.stdout.trim().split(/\s+/, 1)[0] ?? "";
+  return isCommitSha(sha) ? sha : undefined;
+}
+
+function isCommitSha(value: string): boolean {
+  return /^[0-9a-f]{40}$/iu.test(value);
+}
+
 function commitSubject(run: RunRecord): string {
   const source = run.source?.key ?? run.title;
   return `TaskSmith: ${source}`.slice(0, 100);
@@ -238,6 +354,30 @@ function buildPullRequestBody(run: RunRecord, changedFiles: readonly string[], r
     "",
     "AI-generated change: yes. Human review is required before merge.",
   ].filter((line) => line !== "").join("\n");
+}
+
+function buildSquashMergeCommitBody(run: RunRecord, changedFiles: readonly string[], review: ReviewRecord, publicBaseUrl: string): string {
+  const runUrl = `${publicBaseUrl}/runs/${run.id}`;
+  const sourceLine = run.source?.url ? `${run.source.key} ${run.source.url}` : run.source?.key ?? "manual run";
+  return [
+    "TaskSmith squash merge delivery.",
+    "",
+    `Run: ${runUrl}`,
+    `Source: ${sourceLine}`,
+    `Repository: ${run.repoKey}`,
+    "Verification: passed before direct merge.",
+    `Review: ${review.summary}`,
+    "",
+    "Changed files:",
+    ...changedFiles.slice(0, 50).map((file) => `- ${file}`),
+    changedFiles.length > 50 ? `- ...and ${changedFiles.length - 50} more` : "",
+    "",
+    "AI-generated change: yes. TaskSmith direct merge mode was explicitly configured.",
+  ].filter((line) => line !== "").join("\n");
+}
+
+function buildGitHubCommitUrl(provider: GitHubProviderConfig, commitSha: string): string {
+  return `https://github.com/${provider.owner}/${provider.repo}/commit/${commitSha}`;
 }
 
 function parsePullRequestUrl(stdout: string): string {
@@ -299,8 +439,50 @@ async function updateSourceWithPullRequest(
   }
 }
 
+async function updateSourceWithSquashMerge(
+  run: RunRecord,
+  provider: GitHubProviderConfig | undefined,
+  targetBranch: string,
+  commitSha: string,
+  commitUrl: string | undefined,
+  review: ReviewRecord,
+  publicBaseUrl: string,
+): Promise<string | undefined> {
+  if (!run.source) return undefined;
+  const body = buildSourceSquashMergeComment(run, targetBranch, commitSha, commitUrl, review, publicBaseUrl);
+  try {
+    if (run.source.type === "github_issue") {
+      if (!provider) return "GitHub issue source update requires gitProvider config";
+      const issueNumber = parseIssueNumber(run.source.key);
+      if (issueNumber === undefined) return `Could not parse GitHub issue number from ${run.source.key}`;
+      const result = await runGh(["issue", "comment", String(issueNumber), "--repo", `${provider.owner}/${provider.repo}`, "--body", body], provider);
+      if (result.code !== 0) return summarizeCommandFailure(result);
+      return undefined;
+    }
+    if (run.source.type === "jira") {
+      await commentOnJiraIssue(loadJiraClientConfig(), run.source.key, body);
+      return undefined;
+    }
+    return undefined;
+  } catch (error: unknown) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
 function buildSourcePullRequestComment(run: RunRecord, pullRequest: PullRequestRecord, review: ReviewRecord, publicBaseUrl: string): string {
   return `TaskSmith created a ready-to-review PR:\n\n${pullRequest.url}\n\nVerification: passed\nReview: ${review.summary}\nRun: ${publicBaseUrl}/runs/${run.id}`;
+}
+
+function buildSourceSquashMergeComment(
+  run: RunRecord,
+  targetBranch: string,
+  commitSha: string,
+  commitUrl: string | undefined,
+  review: ReviewRecord,
+  publicBaseUrl: string,
+): string {
+  const commitLine = commitUrl ? `${commitUrl}` : commitSha;
+  return `TaskSmith squash-merged this issue to ${targetBranch}:\n\n${commitLine}\n\nVerification: passed\nReview: ${review.summary}\nRun: ${publicBaseUrl}/runs/${run.id}`;
 }
 
 function parseIssueNumber(sourceKey: string): number | undefined {

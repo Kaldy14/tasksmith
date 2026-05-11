@@ -35,7 +35,7 @@ Jira/GitHub issue marked tasksmith
 
 ## Non-goals for MVP
 
-- Auto-merge to main.
+- Auto-merge to main by default. Production remains PR-only unless policy changes; direct merge is only allowed for personal/non-production deployments through explicit per-deployment/per-repo `squash_merge_main` configuration after verification and review pass.
 - Production secret access from agent sandboxes.
 - Multi-tenant SaaS support.
 - Complex RBAC beyond a trusted internal team.

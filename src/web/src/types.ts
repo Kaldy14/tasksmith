@@ -6,6 +6,7 @@ export type RunStatus =
   | "verifying"
   | "fixing"
   | "reviewing"
+  | "delivering"
   | "creating_pr"
   | "pr_created"
   | "completed"

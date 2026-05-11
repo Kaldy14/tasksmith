@@ -87,12 +87,12 @@ Implemented now:
 - manual runs against configured repos,
 - GitHub Issues and Jira source polling with idempotent claims,
 - fresh-context diff review with structured findings and severe-finding blocking,
-- ready-to-review GitHub PR creation after deterministic verification and review.
+- ready-to-review GitHub PR creation after deterministic verification and review,
+- explicit `squash_merge_main` delivery that creates one TaskSmith commit and pushes it to the configured target branch without force.
 
 Still to implement:
 
-- Jira status/label transitions beyond Run-link/PR-link comments,
+- Jira status/label transitions beyond Run-link/PR-link/direct-merge comments,
 - planning pass,
 - LLM-backed deep review beyond the deterministic fresh-context guardrail reviewer,
-- bounded fix attempts,
-- optional squash merge to main.
+- bounded review-finding fix attempts.

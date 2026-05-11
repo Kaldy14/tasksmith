@@ -194,11 +194,16 @@ export class RuntimeManager {
 
   private async deliverReviewedRun(runId: string, verificationSummary: string, review: ReviewRecord): Promise<void> {
     const run = await this.requireRun(runId);
-    await this.store.updateRun(runId, { status: "creating_pr" });
-    await this.emit(runId, { type: "run_status", status: "creating_pr", detail: "Preparing delivery" });
+    if (isTerminalRunStatus(run.status)) return;
+    const workflow = this.workflowForRun(run);
+    const deliveryStatus = workflow.deliveryMode === "ready_pr" ? "creating_pr" : "delivering";
+    await this.store.updateRun(runId, { status: deliveryStatus });
+    await this.emit(runId, { type: "run_status", status: deliveryStatus, detail: "Preparing delivery" });
 
     try {
-      const result = await this.delivery.deliver(run, this.store.pathsForRun(runId), review, async (event) => {
+      const latest = await this.requireRun(runId);
+      if (isTerminalRunStatus(latest.status)) return;
+      const result = await this.delivery.deliver(latest, this.store.pathsForRun(runId), review, async (event) => {
         await this.emit(runId, event);
       });
       if (result.status === "created" && result.pullRequest) {

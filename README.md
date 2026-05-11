@@ -77,7 +77,7 @@ Manual Run, deterministic verification, GitHub/Jira source pickup, fresh-context
 - a GitHub Issues/Jira poll endpoint with file-backed idempotent claims,
 - deterministic verifier events and redacted logs,
 - fresh-context diff review with structured findings and blocking severe findings,
-- ready-to-review GitHub PR creation after verification/review for configured repositories,
+- ready-to-review GitHub PR creation or explicit `squash_merge_main` direct delivery after verification/review for configured repositories,
 - Postgres app-state storage via `TASKSMITH_DATABASE_URL` while Pi chats, raw events, logs, workspaces, and large artifacts remain file-backed,
 - optional Better Auth email/password protection for UI/API/WebSocket control surfaces via `TASKSMITH_AUTH_ENABLED=1`.
 
