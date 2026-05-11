@@ -80,6 +80,7 @@ async function routeHttp(deps: ServerDeps, req: IncomingMessage, res: ServerResp
 
   if (method === "GET" && url.pathname === "/api/config") {
     sendJson(res, 200, {
+      auth: { enabled: deps.config.auth.enabled },
       repositories: publicRepositories(deps.config.repositories),
       sourceFlow: deps.config.sourceFlow,
       workflow: deps.config.workflow,
@@ -186,7 +187,7 @@ async function routeHttp(deps: ServerDeps, req: IncomingMessage, res: ServerResp
   }
 
   if (requiresAuthenticatedPage(deps, url.pathname) && !(await ensureAuthenticated(deps, req))) {
-    redirect(res, "/login");
+    redirect(res, `/login?next=${encodeURIComponent(`${url.pathname}${url.search}`)}`);
     return;
   }
 

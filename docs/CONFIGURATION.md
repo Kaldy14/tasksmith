@@ -173,6 +173,14 @@ TASKSMITH_AUTH_SECRET=<32+ random bytes>
 BETTER_AUTH_URL=https://tasksmith.example.com
 ```
 
+`BETTER_AUTH_URL` is the canonical public origin for auth cookies and callbacks. `TASKSMITH_AUTH_URL` is accepted as an optional alias/fallback when `BETTER_AUTH_URL` is not set. `TASKSMITH_AUTH_TRUSTED_ORIGINS` is optional and adds comma- or whitespace-separated Better Auth trusted origins/patterns for reverse proxies or multi-host deployments:
+
+```txt
+TASKSMITH_AUTH_TRUSTED_ORIGINS=https://tasksmith.example.com,https://tasksmith-admin.example.com
+```
+
+Config precedence is implemented in `src/server/config.ts`: `BETTER_AUTH_URL` wins over `TASKSMITH_AUTH_URL`, then `TASKSMITH_PUBLIC_URL`/host/port-derived defaults are used; trusted origins always include the configured base URL plus localhost origins for the configured listener port.
+
 When auth is enabled, `TASKSMITH_DATABASE_URL` is required. Startup migrations create Better Auth's `user`, `session`, `account`, and `verification` tables alongside TaskSmith app-state tables. Public sign-up is disabled; create the first admin with:
 
 ```bash

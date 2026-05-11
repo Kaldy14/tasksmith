@@ -17,6 +17,7 @@ export function useRuns(options: { enabled?: boolean } = {}): {
   const refresh = useCallback(async () => {
     if (!enabled || inFlight.current) return;
     inFlight.current = true;
+    setLoading(true);
     try {
       const next = await listRuns();
       setRuns(next);

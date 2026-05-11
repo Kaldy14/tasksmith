@@ -77,14 +77,17 @@ async function main(): Promise<void> {
 
     try {
       const baseUrl = `http://127.0.0.1:${port}`;
-      await waitForHealth(baseUrl, 20_000);
+      await waitForHealthOrExit(server, baseUrl, 20_000);
 
       const anonymousRuns = await fetch(`${baseUrl}/api/runs`);
       assertEqual(anonymousRuns.status, 401, "anonymous API should be rejected");
 
       const anonymousPage = await fetch(`${baseUrl}/config`, { redirect: "manual" });
       assertEqual(anonymousPage.status, 302, "anonymous UI page should redirect");
-      assertEqual(anonymousPage.headers.get("location"), "/login", "anonymous UI redirect location");
+      const redirectLocation = anonymousPage.headers.get("location");
+      assert(redirectLocation !== null, "anonymous UI redirect should include a location");
+      assert(redirectLocation.startsWith("/login?next="), "anonymous UI redirect location should preserve next path");
+      assertEqual(new URL(redirectLocation, baseUrl).searchParams.get("next"), "/config", "anonymous UI redirect next path");
 
       const ok = await getJson<{ status?: string; ok?: boolean }>(`${baseUrl}/api/auth/ok`);
       assert(ok.status === "ok" || ok.ok === true, "Better Auth ok endpoint should respond successfully");
@@ -120,6 +123,27 @@ async function main(): Promise<void> {
     await adminPool.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
     await adminPool.end();
     if (process.env.TASKSMITH_KEEP_E2E_ARTIFACTS !== "1") await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function waitForHealthOrExit(child: ReturnType<typeof spawn>, baseUrl: string, timeoutMs: number): Promise<void> {
+  let cleanup = (): void => {};
+  const childExit = new Promise<never>((_, reject) => {
+    const onExit = (code: number | null, signal: NodeJS.Signals | null): void => {
+      reject(new Error(`Server exited before health check passed: code=${code ?? "null"} signal=${signal ?? "null"}`));
+    };
+    const onError = (error: Error): void => reject(error);
+    cleanup = () => {
+      child.off("exit", onExit);
+      child.off("error", onError);
+    };
+    child.once("exit", onExit);
+    child.once("error", onError);
+  });
+  try {
+    await Promise.race([waitForHealth(baseUrl, timeoutMs), childExit]);
+  } finally {
+    cleanup();
   }
 }
 

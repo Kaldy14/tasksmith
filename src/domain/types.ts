@@ -214,12 +214,18 @@ export interface VerificationConfig {
   defaultCommands: VerificationCommandConfig[];
 }
 
-export interface AuthConfig {
-  enabled: boolean;
-  secret?: string;
-  baseUrl: string;
-  trustedOrigins: string[];
-}
+export type AuthConfig =
+  | {
+      enabled: false;
+      baseUrl: string;
+      trustedOrigins: string[];
+    }
+  | {
+      enabled: true;
+      secret: string;
+      baseUrl: string;
+      trustedOrigins: string[];
+    };
 
 export type NormalizedRunEvent =
   | { type: "run_status"; status: RunStatus; detail?: string }

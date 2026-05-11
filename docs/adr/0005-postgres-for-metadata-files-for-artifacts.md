@@ -61,3 +61,4 @@ Negative:
 - [x] UI/API reads run state and normalized events from Postgres in DB mode.
 - [x] Pi session/chat files and raw Pi event JSONL remain on disk and are referenced by artifact paths.
 - [x] Dockerized Postgres deployment is documented for the dedicated TaskSmith host.
+- [x] With `TASKSMITH_AUTH_ENABLED=1` and `TASKSMITH_DATABASE_URL` pointed at test Postgres, migrations create queryable Better Auth `user`, `session`, `account`, and `verification` tables; auth e2e signs up a user, signs in, and verifies session-backed API access.

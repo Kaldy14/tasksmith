@@ -11,6 +11,7 @@ interface ProjectRailProps {
   runs: RunRecord[];
   loading: boolean;
   connection: ConnectionStatus;
+  authEnabled: boolean;
   onCreated: () => void;
 }
 
@@ -52,10 +53,9 @@ function groupByProject(runs: RunRecord[]): ProjectGroup[] {
     });
 }
 
-export function ProjectRail({ runs, loading, connection, onCreated }: ProjectRailProps) {
+export function ProjectRail({ runs, loading, connection, authEnabled, onCreated }: ProjectRailProps) {
   const params = useParams({ strict: false }) as { runId?: string };
   const selected = params.runId;
-  const session = authClient.useSession();
   const [showIntake, setShowIntake] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
@@ -146,27 +146,7 @@ export function ProjectRail({ runs, loading, connection, onCreated }: ProjectRai
       </ScrollArea>
 
       <div className="shrink-0 space-y-2 border-t border-border/70 px-3 py-3">
-        {session.data?.user ? (
-          <div className="flex items-center gap-2 rounded-lg bg-accent px-2 py-2 text-xs text-muted-foreground">
-            <span className="min-w-0 flex-1 truncate">{session.data.user.email}</span>
-            <button
-              type="button"
-              className="grid size-6 place-items-center rounded-md transition-colors hover:bg-background hover:text-foreground"
-              aria-label="Sign out"
-              onClick={() => {
-                void authClient.signOut({
-                  fetchOptions: {
-                    onSuccess: () => {
-                      window.location.href = "/login";
-                    },
-                  },
-                });
-              }}
-            >
-              <LogOut className="size-3.5" />
-            </button>
-          </div>
-        ) : null}
+        {authEnabled ? <SessionSummary /> : null}
         <Link
           to="/config"
           className="flex h-8 items-center gap-2 rounded-lg bg-accent px-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
@@ -187,6 +167,32 @@ export function ProjectRail({ runs, loading, connection, onCreated }: ProjectRai
         </div>
       </div>
     </aside>
+  );
+}
+
+function SessionSummary() {
+  const session = authClient.useSession();
+  if (!session.data?.user) return null;
+  return (
+    <div className="flex items-center gap-2 rounded-lg bg-accent px-2 py-2 text-xs text-muted-foreground">
+      <span className="min-w-0 flex-1 truncate">{session.data.user.email}</span>
+      <button
+        type="button"
+        className="grid size-6 place-items-center rounded-md transition-colors hover:bg-background hover:text-foreground"
+        aria-label="Sign out"
+        onClick={() => {
+          void authClient.signOut({
+            fetchOptions: {
+              onSuccess: () => {
+                window.location.href = "/login";
+              },
+            },
+          });
+        }}
+      >
+        <LogOut className="size-3.5" />
+      </button>
+    </div>
   );
 }
 

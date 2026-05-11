@@ -16,12 +16,9 @@ if (password.length < 12) throw new Error("TASKSMITH_BOOTSTRAP_ADMIN_PASSWORD mu
 const baseConfig = loadConfig();
 const databaseUrl = baseConfig.databaseUrl;
 if (!databaseUrl) throw new Error("TASKSMITH_DATABASE_URL is required");
-if (!baseConfig.auth.secret) throw new Error("TASKSMITH_AUTH_SECRET or BETTER_AUTH_SECRET is required");
+if (!baseConfig.auth.enabled) throw new Error("TASKSMITH_AUTH_ENABLED=1 and TASKSMITH_AUTH_SECRET or BETTER_AUTH_SECRET are required");
 
-const config: AppConfig = {
-  ...baseConfig,
-  auth: { ...baseConfig.auth, enabled: true },
-};
+const config: AppConfig = baseConfig;
 
 const index = new PostgresMetadataIndex(databaseUrl);
 await index.init();
@@ -29,30 +26,32 @@ await index.close();
 
 const pool = new Pool({ connectionString: databaseUrl, application_name: "tasksmith-auth-bootstrap" });
 const db = drizzle(pool, { schema: authSchema });
+let alreadyExists = false;
 try {
   const existing = await db.select({ id: user.id }).from(user).where(eq(user.email, email)).limit(1);
-  if (existing.length > 0) {
-    console.log(`TaskSmith admin already exists: ${email}`);
-    process.exit(0);
-  }
+  alreadyExists = existing.length > 0;
 } finally {
   await pool.end();
 }
 
-const auth = createTaskSmithAuthService(config, { allowSignUp: true });
-if (!auth) throw new Error("Failed to initialize TaskSmith auth");
-try {
-  await auth.auth.api.signUpEmail({
-    body: {
-      name,
-      email,
-      password,
-      rememberMe: false,
-    },
-  });
-  console.log(`Created TaskSmith admin: ${email}`);
-} finally {
-  await auth.close();
+if (alreadyExists) {
+  console.log(`TaskSmith admin already exists: ${email}`);
+} else {
+  const auth = createTaskSmithAuthService(config, { allowSignUp: true });
+  if (!auth) throw new Error("Failed to initialize TaskSmith auth");
+  try {
+    await auth.auth.api.signUpEmail({
+      body: {
+        name,
+        email,
+        password,
+        rememberMe: false,
+      },
+    });
+    console.log(`Created TaskSmith admin: ${email}`);
+  } finally {
+    await auth.close();
+  }
 }
 
 function readRequiredEnv(name: string): string {

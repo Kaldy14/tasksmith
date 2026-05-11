@@ -321,7 +321,7 @@ After PR creation, TaskSmith watches CI checks and performs bounded fix attempts
 
 ## M8 — Hardening and internal beta
 
-**Status:** `[ ]` Not started  
+**Status:** `[~]` In progress  
 **Type:** production readiness
 
 ### Tasks

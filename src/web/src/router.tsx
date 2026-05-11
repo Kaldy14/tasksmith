@@ -8,6 +8,7 @@ import {
   useParams,
   useRouterState,
 } from "@tanstack/react-router";
+import { getPublicConfig } from "@/api";
 import { Anvil } from "@/components/anvil";
 import { ConfigPage } from "@/components/config-page";
 import { LoginPage } from "@/components/login-page";
@@ -33,9 +34,21 @@ function RootShell() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const isLogin = pathname === "/login";
   const [connection, setConnection] = useState<ConnectionStatus>("idle");
+  const [authEnabled, setAuthEnabled] = useState(false);
   const { runs, loading, refresh } = useRuns({ enabled: !isLogin });
 
-  if (isLogin) return <Outlet />;
+  useEffect(() => {
+    if (isLogin) return;
+    let cancelled = false;
+    void getPublicConfig()
+      .then((config) => {
+        if (!cancelled) setAuthEnabled(config.auth.enabled);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [isLogin]);
 
   const refreshRuns = useCallback(() => {
     void refresh();
@@ -46,6 +59,8 @@ function RootShell() {
     [refreshRuns],
   );
 
+  if (isLogin) return <Outlet />;
+
   return (
     <ShellContext.Provider value={shellValue}>
       <div className="flex h-screen min-h-0 overflow-hidden bg-background text-foreground">
@@ -53,6 +68,7 @@ function RootShell() {
           runs={runs}
           loading={loading}
           connection={connection}
+          authEnabled={authEnabled}
           onCreated={refreshRuns}
         />
         <main className="flex min-w-0 flex-1 flex-col">

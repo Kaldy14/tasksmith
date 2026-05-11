@@ -7,8 +7,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+function getSafeNextPath(): string | undefined {
+  const next = new URLSearchParams(window.location.search).get("next");
+  if (!next || !next.startsWith("/") || next.startsWith("//") || next.startsWith("/login")) return undefined;
+  return next;
+}
+
 export function LoginPage() {
   const navigate = useNavigate();
+  const nextPath = getSafeNextPath();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | undefined>();
@@ -21,6 +28,10 @@ export function LoginPage() {
     try {
       const result = await authClient.signIn.email({ email, password, rememberMe: true });
       if (result.error) throw new Error(result.error.message ?? "Sign in failed");
+      if (nextPath) {
+        window.location.assign(nextPath);
+        return;
+      }
       await navigate({ to: "/" });
     } catch (caught: unknown) {
       setError(caught instanceof Error ? caught.message : "Sign in failed");
