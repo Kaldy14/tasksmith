@@ -133,29 +133,34 @@ Then add to the systemd unit:
 Environment=TASKSMITH_CONFIG_PATH=/opt/tasksmith/config/repos.json
 ```
 
-## Postgres metadata index
+## Postgres app database
 
-TaskSmith can mirror run/source/PR/review metadata into Postgres while keeping Pi session/chat files and event JSONL on disk. Enable it with:
+TaskSmith uses Postgres for app state and normalized UI events while keeping Pi session/chat files and large/raw artifacts on disk. Enable it with:
 
 ```txt
 TASKSMITH_DATABASE_URL=postgres://tasksmith:<password>@127.0.0.1:5432/tasksmith
 ```
 
-When this is set, startup applies metadata-index migrations and syncs existing file-backed state into Postgres through Drizzle ORM. New writes are mirrored for:
+When this is set, startup applies Drizzle/Postgres migrations and imports existing legacy file-backed state. New app-state writes go to Postgres for:
 
 - `tasksmith_runs`
+- `tasksmith_attempts`
 - `tasksmith_source_claims`
+- `tasksmith_run_events`
+- `tasksmith_control_messages`
 - `tasksmith_pull_requests`
 - `tasksmith_reviews`
+- `tasksmith_review_findings`
+- `tasksmith_artifacts`
 - `tasksmith_event_checkpoints`
 
-The database stores pointers such as `normalized_events_path`, `raw_events_path`, `control_events_path`, `run_dir`, and `workspace_dir`. It does not store raw Pi chat/session transcripts; those stay in the per-run filesystem artifacts.
+The database stores normalized/redacted TaskSmith UI events and pointers such as `raw_events_path`, `run_dir`, `workspace_dir`, and `session_dir`. It does not store raw Pi chat/session transcript structures; those stay in the per-run filesystem artifacts.
 
 Useful commands:
 
 ```bash
-pnpm db:migrate        # apply metadata-index migrations only
-pnpm db:sync-metadata  # migrate and resync file-backed state into Postgres
+pnpm db:migrate        # apply app database migrations only
+pnpm db:sync-metadata  # import/resync legacy file-backed state into Postgres
 ```
 
 Better Auth should use the same Postgres database later, with its own migrations/tables for users, sessions, accounts, and verification tokens.

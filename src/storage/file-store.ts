@@ -59,14 +59,8 @@ export class FileStore {
       await this.writeReviewsState({ version: 1, reviews: [] });
     }
     if (this.metadataIndex) {
-      try {
-        await this.metadataIndex.init();
-        await this.syncMetadataIndex();
-      } catch (error: unknown) {
-        console.error(`TaskSmith Postgres metadata index disabled after init failure: ${error instanceof Error ? error.message : String(error)}`);
-        await this.metadataIndex.close().catch(() => undefined);
-        this.metadataIndex = undefined;
-      }
+      await this.metadataIndex.init();
+      await this.syncLegacyFilesToPostgres();
     }
   }
 
@@ -125,30 +119,33 @@ export class FileStore {
       updatedAt: now,
     };
     await this.writeMetadata(run);
+    if (this.metadataIndex) {
+      await this.metadataIndex.upsertRun(run, paths);
+      await this.metadataIndex.indexEventCheckpoint(run.id, paths, undefined, 0, now);
+      return run;
+    }
     await this.mutateRuns((runs) => [run, ...runs]);
-    await this.indexRun(run);
-    await this.indexEventCheckpoint(run.id, undefined, 0);
     return run;
   }
 
   async listRuns(): Promise<RunRecord[]> {
+    if (this.metadataIndex) return this.metadataIndex.listRuns();
     const state = await this.readRunsState();
     return [...state.runs].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }
 
   async listSourceClaims(): Promise<SourceClaim[]> {
+    if (this.metadataIndex) return this.metadataIndex.listSourceClaims();
     const state = await this.readClaimsState();
     return [...state.claims].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }
 
   async tryCreateSourceClaim(input: CreateSourceClaimInput): Promise<{ claim: SourceClaim; created: boolean }> {
+    if (this.metadataIndex) return this.metadataIndex.tryCreateSourceClaim(input, this.now());
     return this.enqueue("__claims__", async () => {
       const state = await this.readClaimsState();
       const existing = state.claims.find((claim) => claim.key === input.key);
-      if (existing) {
-        await this.indexSourceClaim(existing);
-        return { claim: existing, created: false };
-      }
+      if (existing) return { claim: existing, created: false };
       const now = this.now();
       const claim: SourceClaim = {
         key: input.key,
@@ -162,12 +159,12 @@ export class FileStore {
         updatedAt: now,
       };
       await this.writeClaimsState({ version: 1, claims: [claim, ...state.claims] });
-      await this.indexSourceClaim(claim);
       return { claim, created: true };
     });
   }
 
   async updateSourceClaim(claimKey: string, patch: Partial<Omit<SourceClaim, "key" | "createdAt">>): Promise<SourceClaim> {
+    if (this.metadataIndex) return this.metadataIndex.updateSourceClaim(claimKey, patch, this.now());
     let updated: SourceClaim | undefined;
     await this.enqueue("__claims__", async () => {
       const state = await this.readClaimsState();
@@ -179,26 +176,42 @@ export class FileStore {
       await this.writeClaimsState({ version: 1, claims });
     });
     if (!updated) throw new Error(`Source claim not found: ${claimKey}`);
-    await this.indexSourceClaim(updated);
     return updated;
   }
 
   async listPullRequests(): Promise<PullRequestRecord[]> {
+    if (this.metadataIndex) return this.metadataIndex.listPullRequests();
     const state = await this.readPullRequestsState();
     return [...state.pullRequests].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }
 
   async listReviews(): Promise<ReviewRecord[]> {
+    if (this.metadataIndex) return this.metadataIndex.listReviews();
     const state = await this.readReviewsState();
     return [...state.reviews].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }
 
   async getReviewForRun(runId: string): Promise<ReviewRecord | undefined> {
+    if (this.metadataIndex) return this.metadataIndex.getReviewForRun(runId);
     const state = await this.readReviewsState();
     return state.reviews.find((review) => review.runId === runId);
   }
 
   async recordReview(input: CreateReviewRecordInput): Promise<ReviewRecord> {
+    if (this.metadataIndex) {
+      const existing = await this.metadataIndex.getReviewForRun(input.runId);
+      const now = this.now();
+      return this.metadataIndex.recordReview({
+        id: existing?.id ?? `review-${randomUUID().slice(0, 12)}`,
+        runId: input.runId,
+        status: input.status,
+        summary: input.summary,
+        findings: input.findings,
+        ...(input.diffStat ? { diffStat: input.diffStat } : {}),
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      });
+    }
     let record: ReviewRecord;
     await this.enqueue("__reviews__", async () => {
       const state = await this.readReviewsState();
@@ -219,16 +232,44 @@ export class FileStore {
         : [record, ...state.reviews];
       await this.writeReviewsState({ version: 1, reviews });
     });
-    await this.indexReview(record!);
     return record!;
   }
 
   async getPullRequestForRun(runId: string): Promise<PullRequestRecord | undefined> {
+    if (this.metadataIndex) return this.metadataIndex.getPullRequestForRun(runId);
     const state = await this.readPullRequestsState();
     return state.pullRequests.find((pullRequest) => pullRequest.runId === runId);
   }
 
   async recordPullRequest(input: CreatePullRequestRecordInput): Promise<PullRequestRecord> {
+    if (this.metadataIndex) {
+      const existing = await this.metadataIndex.getPullRequestForRun(input.runId);
+      const now = this.now();
+      const saved = existing ?? await this.metadataIndex.recordPullRequest({
+        id: `pr-${randomUUID().slice(0, 12)}`,
+        runId: input.runId,
+        provider: input.provider,
+        url: input.url,
+        ...(input.number === undefined ? {} : { number: input.number }),
+        branch: input.branch,
+        baseBranch: input.baseBranch,
+        title: input.title,
+        body: input.body,
+        status: "open",
+        createdAt: now,
+        updatedAt: now,
+      });
+      await this.updateRun(input.runId, {
+        pullRequest: {
+          provider: saved.provider,
+          url: saved.url,
+          ...(saved.number === undefined ? {} : { number: saved.number }),
+          branch: saved.branch,
+          status: saved.status,
+        },
+      });
+      return saved;
+    }
     let record: PullRequestRecord;
     await this.enqueue("__pull_requests__", async () => {
       const state = await this.readPullRequestsState();
@@ -255,7 +296,6 @@ export class FileStore {
       await this.writePullRequestsState({ version: 1, pullRequests: [record, ...state.pullRequests] });
     });
     const saved = record!;
-    await this.indexPullRequest(saved);
     await this.updateRun(input.runId, {
       pullRequest: {
         provider: saved.provider,
@@ -269,11 +309,20 @@ export class FileStore {
   }
 
   async getRun(runId: string): Promise<RunRecord | undefined> {
+    if (this.metadataIndex) return this.metadataIndex.getRun(runId);
     const state = await this.readRunsState();
     return state.runs.find((run) => run.id === runId);
   }
 
   async updateRun(runId: string, patch: Partial<Omit<RunRecord, "id" | "createdAt">>): Promise<RunRecord> {
+    if (this.metadataIndex) {
+      const run = await this.metadataIndex.getRun(runId);
+      if (!run) throw new Error(`Run not found: ${runId}`);
+      const updated = { ...run, ...patch, updatedAt: this.now() };
+      await this.writeMetadata(updated);
+      await this.metadataIndex.upsertRun(updated, this.pathsForRun(updated.id));
+      return updated;
+    }
     let updated: RunRecord | undefined;
     await this.mutateRuns((runs) => runs.map((run) => {
       if (run.id !== runId) return run;
@@ -282,7 +331,6 @@ export class FileStore {
     }));
     if (!updated) throw new Error(`Run not found: ${runId}`);
     await this.writeMetadata(updated);
-    await this.indexRun(updated);
     return updated;
   }
 
@@ -294,6 +342,11 @@ export class FileStore {
   }
 
   async appendControlEvent(runId: string, value: unknown): Promise<void> {
+    if (this.metadataIndex) {
+      const run = await this.metadataIndex.getRun(runId);
+      await this.metadataIndex.appendControlMessage(runId, run?.currentAttemptId, controlKind(value), toRecord(redactForStorage(value)), this.now());
+      return;
+    }
     const paths = this.pathsForRun(runId);
     await this.enqueue(runId, async () => {
       await appendJsonl(paths.controlEventsPath, { createdAt: new Date().toISOString(), command: redactForStorage(value) });
@@ -302,6 +355,10 @@ export class FileStore {
 
   async appendEvent(run: RunRecord, data: NormalizedRunEvent): Promise<StoredRunEvent> {
     const paths = this.pathsForRun(run.id);
+    if (this.metadataIndex) {
+      const payload = compactEventPayload(redactForStorage(data));
+      return this.enqueue(run.id, async () => this.metadataIndex!.appendEvent(run, payload, this.now(), paths));
+    }
     return this.enqueue(run.id, async () => {
       const sequence = await this.nextSequence(paths.normalizedEventsPath);
       const stored: StoredRunEvent = {
@@ -315,22 +372,22 @@ export class FileStore {
         data: redactForStorage(data),
       };
       await appendJsonl(paths.normalizedEventsPath, stored);
-      await this.indexEventCheckpoint(run.id, stored, sequence);
       return stored;
     });
   }
 
   async readEvents(runId: string, afterSequence = 0): Promise<StoredRunEvent[]> {
-    const paths = this.pathsForRun(runId);
-    if (!(await exists(paths.normalizedEventsPath))) return [];
-    const text = await readFile(paths.normalizedEventsPath, "utf8");
-    return text.split("\n")
-      .filter((line) => line.trim().length > 0)
-      .map((line) => JSON.parse(line) as StoredRunEvent)
-      .filter((event) => event.sequence > afterSequence);
+    if (this.metadataIndex) return this.metadataIndex.readEvents(runId, afterSequence);
+    return this.readLegacyEvents(runId, afterSequence);
   }
 
   async markActiveRunsFailedOnBoot(): Promise<void> {
+    if (this.metadataIndex) {
+      const finishedAt = this.now();
+      const changed = await this.metadataIndex.markActiveRunsFailedOnBoot(finishedAt);
+      for (const run of changed) await this.writeMetadata(run);
+      return;
+    }
     const terminal = new Set<RunStatus>(["completed", "pr_created", "failed", "cancelled"]);
     const changed: RunRecord[] = [];
     await this.mutateRuns((runs) => runs.map((run) => {
@@ -346,10 +403,7 @@ export class FileStore {
       changed.push(updated);
       return updated;
     }));
-    for (const run of changed) {
-      await this.writeMetadata(run);
-      await this.indexRun(run);
-    }
+    for (const run of changed) await this.writeMetadata(run);
   }
 
   async copyPiAuthMaterial(paths: RunPaths): Promise<string[]> {
@@ -447,7 +501,7 @@ export class FileStore {
     await writeFile(paths.metadataPath, `${JSON.stringify(run, null, 2)}\n`, "utf8");
   }
 
-  private async syncMetadataIndex(): Promise<void> {
+  private async syncLegacyFilesToPostgres(): Promise<void> {
     if (!this.metadataIndex) return;
     const [runsState, claimsState, pullRequestsState, reviewsState] = await Promise.all([
       this.readRunsState(),
@@ -456,57 +510,42 @@ export class FileStore {
       this.readReviewsState(),
     ]);
     for (const run of runsState.runs) {
-      await this.indexRun(run);
-      const lastEvent = await this.getLastStoredEvent(run.id);
-      await this.indexEventCheckpoint(run.id, lastEvent, lastEvent?.sequence ?? 0);
+      const paths = this.pathsForRun(run.id);
+      await this.metadataIndex.upsertRun(run, paths);
+      let lastEvent: StoredRunEvent | undefined;
+      for (const event of await this.readLegacyEvents(run.id)) {
+        await this.metadataIndex.importLegacyEvent(event, paths);
+        lastEvent = event;
+      }
+      await this.metadataIndex.indexEventCheckpoint(run.id, paths, lastEvent, lastEvent?.sequence ?? 0, run.updatedAt);
     }
-    for (const claim of claimsState.claims) await this.indexSourceClaim(claim);
-    for (const pullRequest of pullRequestsState.pullRequests) await this.indexPullRequest(pullRequest);
-    for (const review of reviewsState.reviews) await this.indexReview(review);
-  }
-
-  private async indexRun(run: RunRecord): Promise<void> {
-    await this.mirrorToMetadataIndex("run", run.id, async () => {
-      await this.metadataIndex?.indexRun(run, this.pathsForRun(run.id));
-    });
-  }
-
-  private async indexSourceClaim(claim: SourceClaim): Promise<void> {
-    await this.mirrorToMetadataIndex("source claim", claim.key, async () => {
-      await this.metadataIndex?.indexSourceClaim(claim);
-    });
-  }
-
-  private async indexPullRequest(record: PullRequestRecord): Promise<void> {
-    await this.mirrorToMetadataIndex("pull request", record.runId, async () => {
-      await this.metadataIndex?.indexPullRequest(record);
-    });
-  }
-
-  private async indexReview(record: ReviewRecord): Promise<void> {
-    await this.mirrorToMetadataIndex("review", record.runId, async () => {
-      await this.metadataIndex?.indexReview(record);
-    });
-  }
-
-  private async indexEventCheckpoint(runId: string, event: StoredRunEvent | undefined, lastSequence: number): Promise<void> {
-    await this.mirrorToMetadataIndex("event checkpoint", runId, async () => {
-      await this.metadataIndex?.indexEventCheckpoint(runId, this.pathsForRun(runId), event, lastSequence);
-    });
-  }
-
-  private async mirrorToMetadataIndex(kind: string, key: string, operation: () => Promise<void>): Promise<void> {
-    if (!this.metadataIndex) return;
-    try {
-      await operation();
-    } catch (error: unknown) {
-      console.error(`TaskSmith Postgres metadata mirror failed for ${kind} ${key}: ${error instanceof Error ? error.message : String(error)}`);
+    for (const claim of claimsState.claims) {
+      const created = await this.metadataIndex.tryCreateSourceClaim(claim, claim.createdAt);
+      if (claim.runId || claim.status !== created.claim.status || claim.error) {
+        await this.metadataIndex.updateSourceClaim(claim.key, claim, claim.updatedAt);
+      }
     }
+    for (const pullRequest of pullRequestsState.pullRequests) await this.metadataIndex.recordPullRequest(pullRequest);
+    for (const review of reviewsState.reviews) await this.metadataIndex.recordReview(review);
   }
 
-  private async getLastStoredEvent(runId: string): Promise<StoredRunEvent | undefined> {
-    const events = await this.readEvents(runId);
-    return events.at(-1);
+  private async readLegacyEvents(runId: string, afterSequence = 0): Promise<StoredRunEvent[]> {
+    const paths = this.pathsForRun(runId);
+    if (!(await exists(paths.normalizedEventsPath))) return [];
+    const text = await readFile(paths.normalizedEventsPath, "utf8");
+    const events: StoredRunEvent[] = [];
+    let lineNumber = 0;
+    for (const line of text.split("\n")) {
+      lineNumber += 1;
+      if (!line.trim()) continue;
+      try {
+        const event = JSON.parse(line) as StoredRunEvent;
+        if (event.sequence > afterSequence) events.push(event);
+      } catch (error: unknown) {
+        console.error(`Skipping malformed legacy event line ${lineNumber} for ${runId}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    return events;
   }
 
   private now(): string {
@@ -521,6 +560,49 @@ export class FileStore {
     this.writeQueues.set(key, result.then(() => undefined, () => undefined));
     return result;
   }
+}
+
+const DB_EVENT_TEXT_LIMIT = 50_000;
+
+function compactEventPayload(event: NormalizedRunEvent): NormalizedRunEvent {
+  switch (event.type) {
+    case "assistant_delta":
+    case "assistant_message":
+      return { ...event, text: truncateForDbEvent(event.text) };
+    case "tool_result":
+      return { ...event, output: truncateForDbEvent(event.output) };
+    case "command_output":
+      return { ...event, output: truncateForDbEvent(event.output) };
+    case "verification":
+      return {
+        ...event,
+        ...(event.stdout === undefined ? {} : { stdout: truncateForDbEvent(event.stdout) }),
+        ...(event.stderr === undefined ? {} : { stderr: truncateForDbEvent(event.stderr) }),
+      };
+    case "error":
+      return { ...event, ...(event.detail === undefined ? {} : { detail: truncateForDbEvent(event.detail) }) };
+    default:
+      return event;
+  }
+}
+
+function truncateForDbEvent(value: string): string {
+  if (Buffer.byteLength(value, "utf8") <= DB_EVENT_TEXT_LIMIT) return value;
+  return `${value.slice(0, DB_EVENT_TEXT_LIMIT)}\n[TaskSmith truncated this database event payload; inspect run artifacts for full raw/log output.]`;
+}
+
+function controlKind(value: unknown): string {
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    if (typeof record.kind === "string") return record.kind;
+    if (typeof record.type === "string") return record.type;
+  }
+  return "unknown";
+}
+
+function toRecord(value: unknown): Record<string, unknown> {
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) return value as Record<string, unknown>;
+  return { value };
 }
 
 async function appendJsonl(file: string, value: unknown): Promise<void> {

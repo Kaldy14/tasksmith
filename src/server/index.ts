@@ -27,7 +27,7 @@ const server = createTaskSmithServer({ config, store, runtime, sourcePoller, hub
 server.listen(config.port, config.host, () => {
   console.log(`TaskSmith listening on http://${config.host}:${config.port}`);
   console.log(`Data dir: ${config.dataDir}`);
-  console.log(`Postgres metadata index: ${store.hasMetadataIndex() ? "enabled" : "disabled"}`);
+  console.log(`App state store: ${store.hasMetadataIndex() ? "postgres" : "file-only"}`);
 });
 
 function scrubRuntimeSecretsFromProcessEnv(): void {

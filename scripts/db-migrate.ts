@@ -6,13 +6,13 @@ import { PostgresMetadataIndex } from "../src/storage/postgres-metadata-index.js
 async function main(): Promise<void> {
   const config = loadConfig();
   if (!config.databaseUrl) {
-    console.log("TASKSMITH_DATABASE_URL is not set; no Postgres metadata index to migrate.");
+    console.log("TASKSMITH_DATABASE_URL is not set; no Postgres app database to migrate.");
     return;
   }
   const index = new PostgresMetadataIndex(config.databaseUrl);
   try {
     await index.init();
-    console.log("Postgres metadata index migrations applied.");
+    console.log("Postgres app database migrations applied.");
   } finally {
     await index.close();
   }

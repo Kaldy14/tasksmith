@@ -138,7 +138,7 @@ sudo systemctl restart tasksmith
 curl -fsS http://127.0.0.1:3000/healthz
 ```
 
-The health response reports `metadataIndex: "postgres"` when the app is using the Postgres index. Pi chat/session files and event JSONL remain under `/opt/tasksmith/data/runs/<run-id>/`; Postgres stores metadata and file pointers only.
+The health response reports `storage: "postgres"` when the app is using Postgres for app state. Pi chat/session files, raw Pi event JSONL, logs, artifacts, and workspaces remain under `/opt/tasksmith/data/runs/<run-id>/`; Postgres stores TaskSmith app state, normalized UI events, control messages, and artifact pointers.
 
 Security note: the server removes `TASKSMITH_DATABASE_URL` from `process.env` after loading config, and the app env file should be root-owned. This prevents normal child-process env inheritance and direct file reads by the `deploy` user, but same-UID `/proc` exposure is still a hardening gap while Pi bash runs in the app process context. Do not store production/high-value secrets in this database until Pi/tool execution runs under a separate restricted user/container or equivalent isolation.
 

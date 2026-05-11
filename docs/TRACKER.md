@@ -3,7 +3,7 @@
 ## Current status
 
 **Stage:** Phase 6 — Fresh-context review foundation  
-**Code status:** Manual Run, verifier, bounded verifier fix attempts, source pickup, per-repo init commands, config UI, fresh-context review, ready-to-review GitHub PR delivery, and optional Postgres metadata indexing foundations implemented  
+**Code status:** Manual Run, verifier, bounded verifier fix attempts, source pickup, per-repo init commands, config UI, fresh-context review, ready-to-review GitHub PR delivery, and Postgres app-state foundation implemented  
 **Primary next milestone:** Better Auth on Postgres, then extend bounded fix attempts to review findings and CI fixup.
 
 TaskSmith currently has durable product/architecture docs, ADRs, research references, and implementation briefs. The next work should be a technical spike, not a full app scaffold.
@@ -127,7 +127,7 @@ Prove TaskSmith can use Pi as a native, steerable runtime on the intended host/s
 **Type:** first product slice  
 **Inspired by:** CodeForge task/worker/event model, OpenHands conversation UI
 
-Phase 2 implementation note: the first vertical slice is documented in [`MANUAL-RUN-MVP.md`](./MANUAL-RUN-MVP.md). It includes a Node/TypeScript API, browser UI, file-backed Run/Event store, WebSocket live stream, deterministic demo runtime, and Pi SDK runtime path.
+Phase 2 implementation note: the first vertical slice is documented in [`MANUAL-RUN-MVP.md`](./MANUAL-RUN-MVP.md). It includes a Node/TypeScript API, browser UI, Postgres-backed app state when configured, legacy file-backed local mode, WebSocket live stream, deterministic demo runtime, and Pi SDK runtime path.
 
 ### Goal
 
@@ -136,7 +136,7 @@ Before Jira automation, manually start a Run and watch/control the Pi session fr
 ### Backend tasks
 
 - [x] Choose app stack and package layout: Node/TypeScript monolith for Phase 2.
-- [~] Create persistence model for `runs`, `attempts`, `events`: file store remains primary for runs/events/artifacts; optional Postgres metadata index is implemented for run/source/PR/review/event checkpoints.
+- [~] Create persistence model for `runs`, `attempts`, `events`: Postgres is primary for app state and normalized events when configured; filesystem remains primary for Pi transcripts, raw events, logs, workspaces, and large artifacts.
 - [x] Implement initial Run state machine.
 - [x] Implement event append API with per-run sequence numbers.
 - [x] Implement in-process worker/runtime manager.
@@ -212,7 +212,7 @@ A GitHub issue or Jira issue matching configured readiness criteria creates exac
 - [x] Define repository/source config: per-repo GitHub Issues or Jira metadata, git checkout URL, branch, verification profile, and Sandcastle-style workflow.
 - [x] Define Jira watch config shape: `tasksmith` readiness label plus configurable label-to-repo routing.
 - [x] Extend Run source model for manual/GitHub issue/Jira source metadata.
-- [x] Add file-backed source claim store with unique claim keys.
+- [x] Add source claim store with unique claim keys; Postgres unique constraints are used when DB mode is configured, with legacy JSON support for local tests.
 - [x] Implement manual GitHub Issues poller endpoint for configured repos.
 - [x] Add GitHub issue Run-link comment after successful claim.
 - [x] Implement Jira poller with environment-sourced Jira credentials.

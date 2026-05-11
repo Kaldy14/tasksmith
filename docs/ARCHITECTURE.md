@@ -54,7 +54,7 @@ TaskSmith should be built around **Runs** and **Events**, not around raw agent p
                                 ▼                         ▼
                        ┌─────────────────┐       ┌────────────────┐
                        │ Postgres         │◀──────│ Worker          │
-                       │ metadata/indexes │       │ Pi runtime      │
+                       │ app state/events │       │ Pi runtime      │
                        └─────────────────┘       └───────┬────────┘
                                                           │
                                                           ▼
@@ -75,7 +75,7 @@ Responsibilities:
 - expose WebSocket run stream,
 - accept user control messages,
 - provide admin configuration APIs,
-- write events to the file-backed event store and mirror metadata checkpoints to Postgres when configured.
+- write run state, control messages, and normalized UI events to Postgres when configured.
 
 ### Source Poller
 
@@ -199,26 +199,27 @@ skipped
 
 ## Persistence split
 
-The current implementation deliberately keeps Pi/session artifacts on disk and uses Postgres only as an optional metadata/index mirror when `TASKSMITH_DATABASE_URL` is set.
+When `TASKSMITH_DATABASE_URL` is configured, Postgres is authoritative for TaskSmith app state and normalized UI events. The filesystem remains authoritative for Pi-native/raw/large artifacts.
 
 Filesystem remains authoritative for:
 
 - Pi session/chat files under each Run directory,
 - raw Pi JSONL events,
-- normalized TaskSmith event JSONL,
-- control JSONL,
 - verifier/reviewer logs and artifacts,
-- per-run workspace and home/session directories.
+- per-run workspace and home/session directories,
+- legacy normalized/control JSONL from pre-Postgres runs.
 
-Postgres stores queryable metadata and pointers:
+Postgres stores app state and queryable metadata:
 
 - run/source/status/attempt/timestamp rows,
 - source claim uniqueness/index rows,
-- pull request and review metadata,
-- event checkpoints and JSONL file paths,
+- normalized TaskSmith run events for UI replay,
+- human control messages,
+- pull request and review metadata/findings,
+- artifact rows and file pointers,
 - future Better Auth user/session/account/verification tables.
 
-The current `FileStore` is still the primary runtime store and is not safe for multiple app processes writing at the same time. Moving operational writes to Postgres and adding a real queue remains a later hardening slice.
+Local tests can omit `TASKSMITH_DATABASE_URL` and use the legacy file-backed store. Production/internal deployments should use Postgres. Multi-process workers still require a later queue/lease model.
 
 ## Suggested database entities
 
@@ -227,10 +228,15 @@ The current `FileStore` is still the primary runtime store and is not safe for m
 - `id`
 - `source_type` — `manual`, `github_issue`, `jira`
 - `source_key` — e.g. `VOS-123`
+- `title`
+- `prompt`
 - `repo_key`
-- `base_branch`
+- `adapter`
 - `status`
 - `current_attempt_id`
+- `source_snapshot`
+- `pull_request`
+- `artifact_paths`
 - `created_at`
 - `updated_at`
 
@@ -255,10 +261,44 @@ The current `FileStore` is still the primary runtime store and is not safe for m
 - `started_at`
 - `finished_at`
 
+### `run_events`
+
+- `id`
+- `run_id`
+- `attempt_id`
+- `sequence`
+- `type`
+- `payload` — normalized/redacted TaskSmith event JSON
+- `artifact_id` — optional pointer to large artifact
+- `raw_ref` — optional pointer into raw provider artifact
+- `created_at`
+
+### `control_messages`
+
+- `id`
+- `run_id`
+- `attempt_id`
+- `kind`
+- `payload`
+- `created_at`
+
+### `artifacts`
+
+- `id`
+- `run_id`
+- `attempt_id`
+- `kind`
+- `path`
+- `size_bytes`
+- `sha256`
+- `content_type`
+- `redaction_state`
+- `created_at`
+- `updated_at`
+
 ### `event_checkpoints`
 
 - `run_id`
-- `normalized_events_path`
 - `raw_events_path`
 - `control_events_path`
 - `last_sequence`
@@ -266,8 +306,6 @@ The current `FileStore` is still the primary runtime store and is not safe for m
 - `last_event_type`
 - `last_event_created_at`
 - `updated_at`
-
-Raw/normalized events themselves remain JSONL artifacts for now. A later migration may index selected event rows if UI/search performance requires it.
 
 ### `verification_results`
 

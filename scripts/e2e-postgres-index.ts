@@ -1,20 +1,20 @@
 #!/usr/bin/env tsx
 
-import { mkdtemp, rm } from "node:fs/promises";
+import { access, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { loadConfig } from "../src/server/config.js";
 import { FileStore } from "../src/storage/file-store.js";
-import { eventCheckpoints, pullRequests, reviews, runs, schemaMigrations, sourceClaims, tasksmithSchema } from "../src/storage/postgres-schema.js";
+import { artifacts, attempts, eventCheckpoints, pullRequests, reviews, runEvents, runs, schemaMigrations, sourceClaims, tasksmithSchema } from "../src/storage/postgres-schema.js";
 
 const baseDatabaseUrl = process.env.TASKSMITH_TEST_DATABASE_URL;
 
 async function main(): Promise<void> {
   if (!baseDatabaseUrl) {
-    console.log("Postgres metadata index e2e skipped; set TASKSMITH_TEST_DATABASE_URL to run it.");
+    console.log("Postgres app-state e2e skipped; set TASKSMITH_TEST_DATABASE_URL to run it.");
     return;
   }
 
@@ -68,6 +68,7 @@ async function main(): Promise<void> {
       sessionFile: path.join(store.pathsForRun(run.id).sessionDir, "session.jsonl"),
     });
     await store.appendEvent(running, { type: "run_status", status: "running", detail: "Postgres index e2e" });
+    await store.appendEvent(running, { type: "attempt_done", status: "completed", summary: "Postgres index e2e attempt complete" });
     await store.recordReview({
       runId: run.id,
       status: "passed",
@@ -103,8 +104,8 @@ async function main(): Promise<void> {
       assertEqual(runRow.status, "pr_created", "run status should be indexed");
       assertEqual(runRow.sourceKey, "Kaldy14/tasksmith#9999", "source key should be indexed");
       assertEqual(runRow.currentAttemptId, "attempt-1", "attempt id should be indexed");
-      const normalizedEventsPath = runRow.artifactPaths.normalizedEventsPath;
-      assert(typeof normalizedEventsPath === "string" && normalizedEventsPath.endsWith("tasksmith-events.jsonl"), "artifact path should point at JSONL event file");
+      const rawEventsPath = runRow.artifactPaths.rawEventsPath;
+      assert(typeof rawEventsPath === "string" && rawEventsPath.endsWith("pi-raw.jsonl"), "artifact path should point at raw Pi JSONL event file");
 
       const claimRow = await one(await db
         .select({ status: sourceClaims.status, runId: sourceClaims.runId })
@@ -113,17 +114,39 @@ async function main(): Promise<void> {
       assertEqual(claimRow.status, "run_created", "source claim status should be indexed");
       assertEqual(claimRow.runId, run.id, "source claim run id should be indexed");
 
+      const eventRow = await one(await db
+        .select({ sequence: runEvents.sequence, type: runEvents.type, payload: runEvents.payload })
+        .from(runEvents)
+        .where(and(eq(runEvents.runId, run.id), eq(runEvents.type, "run_status"))));
+      assertEqual(eventRow.sequence, 1, "normalized event sequence should be stored in Postgres");
+      assertEqual(eventRow.type, "run_status", "normalized event type should be stored in Postgres");
+      assertEqual(eventRow.payload.type, "run_status", "normalized event payload should be stored in Postgres");
+      assert(!(await exists(store.pathsForRun(run.id).normalizedEventsPath)), "Postgres mode should not duplicate normalized events into JSONL");
+
       const checkpointRow = await one(await db
         .select({
           lastSequence: eventCheckpoints.lastSequence,
           lastEventType: eventCheckpoints.lastEventType,
-          normalizedEventsPath: eventCheckpoints.normalizedEventsPath,
+          rawEventsPath: eventCheckpoints.rawEventsPath,
         })
         .from(eventCheckpoints)
         .where(eq(eventCheckpoints.runId, run.id)));
-      assertEqual(checkpointRow.lastSequence, 1, "event checkpoint sequence should be indexed");
-      assertEqual(checkpointRow.lastEventType, "run_status", "event checkpoint type should be indexed");
-      assert(checkpointRow.normalizedEventsPath.endsWith("tasksmith-events.jsonl"), "checkpoint should point to normalized events JSONL");
+      assertEqual(checkpointRow.lastSequence, 2, "event checkpoint sequence should be indexed");
+      assertEqual(checkpointRow.lastEventType, "attempt_done", "event checkpoint type should be indexed");
+      assert(checkpointRow.rawEventsPath.endsWith("pi-raw.jsonl"), "checkpoint should point to raw Pi event JSONL");
+
+      const attemptRow = await one(await db
+        .select({ status: attempts.status, attemptId: attempts.attemptId })
+        .from(attempts)
+        .where(eq(attempts.runId, run.id)));
+      assertEqual(attemptRow.attemptId, "attempt-1", "attempt row should be indexed");
+      assertEqual(attemptRow.status, "completed", "attempt completion should be indexed from attempt_done event");
+
+      const artifactCount = await one(await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(artifacts)
+        .where(eq(artifacts.runId, run.id)));
+      assert(artifactCount.count >= 5, "run artifact pointers should be indexed");
 
       const pullRequestRow = await one(await db
         .select({ url: pullRequests.url, number: pullRequests.number })
@@ -145,7 +168,7 @@ async function main(): Promise<void> {
       await pool.end();
     }
 
-    console.log("Postgres metadata index e2e passed");
+    console.log("Postgres app-state e2e passed");
   } finally {
     process.env.TASKSMITH_DATA_DIR = previousDataDir;
     if (previousDatabaseUrl === undefined) delete process.env.TASKSMITH_DATABASE_URL;
@@ -154,6 +177,15 @@ async function main(): Promise<void> {
     await adminPool.end();
     if (process.env.TASKSMITH_KEEP_E2E_ARTIFACTS === "1") console.log(`Keeping artifacts at ${tempDir}`);
     else await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function exists(filePath: string): Promise<boolean> {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
   }
 }
 

@@ -10,7 +10,7 @@ This slice turns the Phase 1 Pi runtime contract into a browser-visible manual R
 
 - Node/TypeScript HTTP server in `src/server`.
 - React/TanStack Router browser UI in `src/web`, built by Vite into `dist/web` for the Node server to serve.
-- File-backed Run and Event store under `TASKSMITH_DATA_DIR`.
+- Postgres-backed app state and normalized events when `TASKSMITH_DATABASE_URL` is set; legacy file-backed mode for local tests without DB.
 - Manual Run creation.
 - Runtime adapters:
   - `demo` for deterministic UI/e2e without model auth,
@@ -18,7 +18,7 @@ This slice turns the Phase 1 Pi runtime contract into a browser-visible manual R
 - WebSocket event stream at `/api/runs/:id/stream`.
 - REST fallbacks for controls.
 - Browser controls for steer, follow-up, prompt, and abort.
-- Event replay after refresh via persisted `tasksmith-events.jsonl`.
+- Event replay after refresh via persisted normalized events in Postgres, or `tasksmith-events.jsonl` in legacy file mode.
 - Deterministic verifier slice after implementation attempts, with structured `verification` events and redacted stdout/stderr logs.
 
 ## Commands
@@ -93,9 +93,9 @@ For each Run:
   home/.pi/agent/
   pi-session/
   events/
-    tasksmith-events.jsonl
     pi-raw.jsonl
-    controls.jsonl
+    tasksmith-events.jsonl      # legacy file mode / imported pre-Postgres runs
+    controls.jsonl              # legacy file mode / imported pre-Postgres runs
   logs/
     verification-<name>-stdout.log
     verification-<name>-stderr.log
@@ -103,7 +103,7 @@ For each Run:
   metadata.json
 ```
 
-Run/source/review/PR state files:
+Without `TASKSMITH_DATABASE_URL`, local/test mode stores run/source/review/PR state in legacy JSON files:
 
 ```txt
 <TASKSMITH_DATA_DIR>/state/runs.json
@@ -112,9 +112,7 @@ Run/source/review/PR state files:
 <TASKSMITH_DATA_DIR>/state/reviews.json
 ```
 
-When `TASKSMITH_DATABASE_URL` is set, TaskSmith also migrates and syncs a Postgres metadata index. The database stores run/source/status/attempt/timestamp rows, source claims, PR records, review records, and event checkpoints that point back to the JSONL files. Pi session/chat files, raw events, normalized events, logs, artifacts, and workspaces remain file-backed under the Run directory.
-
-This file-first store is sufficient for the current single-process deployment and deterministic tests. Postgres is now available as the metadata/auth foundation, but the current `FileStore` is not yet a multi-writer operational database.
+When `TASKSMITH_DATABASE_URL` is set, TaskSmith applies Drizzle/Postgres migrations and imports legacy file-backed state. Postgres is authoritative for runs, attempts, source claims, normalized UI events, control messages, reviews/findings, pull requests, and artifact pointers. Pi session/chat files, raw Pi events, verifier/reviewer logs, workspaces, and large artifacts remain file-backed under the Run directory.
 
 ## Deterministic verifier slice
 
@@ -199,7 +197,7 @@ The Docker image now defaults to `pnpm start` and exposes port `3000`. `docker-c
 ## Known limitations
 
 - Active runs are not resumed after process restart; non-terminal runs are marked failed on boot.
-- File store is not intended as the final multi-worker database; Postgres currently mirrors metadata/indexes, not raw Pi chats or all operational writes.
+- Postgres mode is the app-state foundation, but a real multi-worker queue/lease model is still required before running multiple TaskSmith app processes.
 - Demo runtime is for deterministic e2e only.
 - Real Pi runtime requires provisioning narrow auth files under `TASKSMITH_PI_AUTH_SOURCE`.
 - Fresh-context review, bounded fix attempts, Jira status transitions, and CI fixup are still later phases.

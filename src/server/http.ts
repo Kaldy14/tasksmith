@@ -51,7 +51,8 @@ async function routeHttp(deps: ServerDeps, req: IncomingMessage, res: ServerResp
   const method = req.method ?? "GET";
 
   if (method === "GET" && url.pathname === "/healthz") {
-    sendJson(res, 200, { ok: true, metadataIndex: deps.store.hasMetadataIndex() ? "postgres" : "file-only" });
+    const storage = deps.store.hasMetadataIndex() ? "postgres" : "file-only";
+    sendJson(res, 200, { ok: true, storage, metadataIndex: storage });
     return;
   }
 
