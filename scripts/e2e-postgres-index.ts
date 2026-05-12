@@ -87,6 +87,28 @@ async function main(): Promise<void> {
       body: "TaskSmith e2e body",
     });
     await store.updateRun(run.id, { status: "pr_created", finishedAt: new Date().toISOString() });
+
+    const freshPostgresOffsetRun = await store.createRun({
+      title: "Fresh Postgres lease e2e",
+      repoKey: "tasksmith",
+      adapter: "demo",
+      prompt: "Do not recover a fresh lease with a Postgres UTC offset timestamp.",
+    });
+    const freshPostgresOffsetClaimed = await store.claimNextQueuedRun("worker-fresh-postgres-offset", 60_000);
+    assert(freshPostgresOffsetClaimed?.id === freshPostgresOffsetRun.id, "expected to claim fresh Postgres-offset run");
+    await store.updateRun(freshPostgresOffsetRun.id, {
+      lease: {
+        ...freshPostgresOffsetClaimed.lease!,
+        expiresAt: toPostgresUtcOffset(new Date(Date.now() + 60_000).toISOString()),
+      },
+    });
+    const recoveredFreshPostgresOffset = await store.recoverStaleLeases(1);
+    assert(!recoveredFreshPostgresOffset.some((recoveredRun) => recoveredRun.id === freshPostgresOffsetRun.id), "fresh Postgres-offset lease should not be recovered");
+    const freshPostgresOffsetAfter = await store.getRun(freshPostgresOffsetRun.id);
+    assertEqual(freshPostgresOffsetAfter?.status, "claimed", "fresh Postgres-offset lease should remain claimed");
+    assert(!!freshPostgresOffsetAfter?.lease, "fresh Postgres-offset lease should not be cleared");
+    await store.updateRun(freshPostgresOffsetRun.id, { status: "cancelled" });
+
     await store.close();
 
     const pool = new Pool({ connectionString: databaseUrl, application_name: "tasksmith-e2e-assert" });
@@ -192,6 +214,10 @@ async function exists(filePath: string): Promise<boolean> {
 function one<T>(rows: T[]): T {
   if (rows.length !== 1) throw new Error(`Expected one row, got ${rows.length}`);
   return rows[0]!;
+}
+
+function toPostgresUtcOffset(iso: string): string {
+  return iso.replace("T", " ").replace("Z", "+00");
 }
 
 function withSearchPath(rawUrl: string, schema: string): string {

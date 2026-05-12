@@ -64,6 +64,21 @@ async function main(): Promise<void> {
     });
     const expiredClaimed = await store.claimNextQueuedRun("worker-expired", 1);
     assert(expiredClaimed?.id === expiredRun.id, "expected to claim expired run");
+
+    const freshPostgresOffsetRun = await store.createRun({
+      title: "Fresh lease run with Postgres offset timestamp",
+      repoKey: "lease-e2e",
+      adapter: "demo",
+      prompt: "Do not recover this fresh lease as stale.",
+    });
+    const freshPostgresOffsetClaimed = await store.claimNextQueuedRun("worker-fresh-postgres-offset", 60_000);
+    assert(freshPostgresOffsetClaimed?.id === freshPostgresOffsetRun.id, "expected to claim fresh Postgres-offset run");
+    await store.updateRun(freshPostgresOffsetRun.id, {
+      lease: {
+        ...freshPostgresOffsetClaimed.lease!,
+        expiresAt: toPostgresUtcOffset(new Date(Date.now() + 60_000).toISOString()),
+      },
+    });
     await delay(5);
 
     const recovered = await store.recoverStaleLeases(1);
@@ -85,6 +100,10 @@ async function main(): Promise<void> {
     assertEqual(expiredAfter?.status, "queued", "expired claimed lease should be requeued");
     assert(!expiredAfter?.lease, "recovered run should have lease cleared");
 
+    const freshPostgresOffsetAfter = await store.getRun(freshPostgresOffsetRun.id);
+    assertEqual(freshPostgresOffsetAfter?.status, "claimed", "fresh Postgres-offset lease should remain claimed");
+    assert(!!freshPostgresOffsetAfter?.lease, "fresh Postgres-offset lease should not be cleared");
+
     await store.close();
     console.log("Lease recovery e2e passed");
   } finally {
@@ -96,6 +115,10 @@ async function main(): Promise<void> {
     if (process.env.TASKSMITH_KEEP_E2E_ARTIFACTS === "1") console.log(`Keeping artifacts at ${tempDir}`);
     else await rm(tempDir, { recursive: true, force: true });
   }
+}
+
+function toPostgresUtcOffset(iso: string): string {
+  return iso.replace("T", " ").replace("Z", "+00");
 }
 
 function assert(value: boolean, message: string): asserts value {
