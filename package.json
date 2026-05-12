@@ -11,7 +11,7 @@
     "dev:web": "vite --config src/web/vite.config.ts",
     "build:web": "vite build --config src/web/vite.config.ts",
     "build": "pnpm build:web",
-    "verify": "pnpm typecheck && pnpm typecheck:web && pnpm build && pnpm e2e:manual-run && pnpm e2e:verifier && pnpm e2e:source-pickup && pnpm e2e:delivery && pnpm e2e:config-init && pnpm e2e:review && pnpm e2e:pi-spike && pnpm e2e:postgres-index && pnpm e2e:auth",
+    "verify": "pnpm typecheck && pnpm typecheck:web && pnpm build && pnpm e2e:manual-run && pnpm e2e:verifier && pnpm e2e:source-pickup && pnpm e2e:delivery && pnpm e2e:config-init && pnpm e2e:review && pnpm e2e:pi-spike && pnpm e2e:postgres-index && pnpm e2e:lease-recovery && pnpm e2e:auth",
     "db:migrate": "tsx scripts/db-migrate.ts",
     "db:sync-metadata": "tsx scripts/db-sync-metadata.ts",
     "auth:bootstrap-admin": "tsx scripts/auth-bootstrap-admin.ts",
@@ -24,6 +24,7 @@
     "e2e:config-init": "tsx scripts/e2e-config-init.ts",
     "e2e:review": "tsx scripts/e2e-review.ts",
     "e2e:postgres-index": "tsx scripts/e2e-postgres-index.ts",
+    "e2e:lease-recovery": "tsx scripts/e2e-lease-recovery.ts",
     "e2e:auth": "tsx scripts/e2e-auth.ts"
   },
   "dependencies": {

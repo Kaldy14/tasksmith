@@ -934,8 +934,9 @@ function addMs(iso: string, ms: number): string {
 }
 
 function isLeaseExpired(run: RunRecord, now: string, leaseTimeoutMs: number): boolean {
-  const expiresAt = run.lease?.expiresAt ?? (run.lease?.lastHeartbeatAt ? addMs(run.lease.lastHeartbeatAt, leaseTimeoutMs) : run.updatedAt);
-  return expiresAt <= now;
+  if (!run.lease) return false;
+  const expiresAt = run.lease.expiresAt ?? (run.lease.lastHeartbeatAt ? addMs(run.lease.lastHeartbeatAt, leaseTimeoutMs) : undefined);
+  return expiresAt ? expiresAt <= now : false;
 }
 
 function clearLease(run: RunRecord): RunRecord {
