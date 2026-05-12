@@ -11,6 +11,7 @@ import type {
 } from "../domain/types.js";
 import { redactForStorage } from "../domain/redaction.js";
 import type { FileStore } from "../storage/file-store.js";
+import { parseGitHubIssueNumber, upsertGitHubSourceStatusComment } from "../sources/github-status-comment.js";
 
 interface CommandResult {
   code: number | null;
@@ -451,10 +452,16 @@ async function updateSourceWithPullRequest(
   const body = buildSourcePullRequestComment(run, pullRequest, review, publicBaseUrl);
   try {
     if (run.source.type === "github_issue") {
-      const issueNumber = parseIssueNumber(run.source.key);
+      const issueNumber = parseGitHubIssueNumber(run.source.key);
       if (issueNumber === undefined) return `Could not parse GitHub issue number from ${run.source.key}`;
-      const result = await runGh(["issue", "comment", String(issueNumber), "--repo", `${provider.owner}/${provider.repo}`, "--body", body], provider);
-      if (result.code !== 0) return summarizeCommandFailure(result);
+      await upsertGitHubSourceStatusComment(provider, issueNumber, {
+        claimKey: run.claimKey ?? `github:${run.source.key}`,
+        runId: run.id,
+        repoKey: run.repoKey,
+        publicBaseUrl,
+        status: "pr_created",
+        detail: `PR: ${pullRequest.url}; Verification: passed; Review: ${review.summary}`,
+      });
       return undefined;
     }
     if (run.source.type === "jira") {
@@ -481,10 +488,16 @@ async function updateSourceWithSquashMerge(
   try {
     if (run.source.type === "github_issue") {
       if (!provider) return "GitHub issue source update requires gitProvider config";
-      const issueNumber = parseIssueNumber(run.source.key);
+      const issueNumber = parseGitHubIssueNumber(run.source.key);
       if (issueNumber === undefined) return `Could not parse GitHub issue number from ${run.source.key}`;
-      const result = await runGh(["issue", "comment", String(issueNumber), "--repo", `${provider.owner}/${provider.repo}`, "--body", body], provider);
-      if (result.code !== 0) return summarizeCommandFailure(result);
+      await upsertGitHubSourceStatusComment(provider, issueNumber, {
+        claimKey: run.claimKey ?? `github:${run.source.key}`,
+        runId: run.id,
+        repoKey: run.repoKey,
+        publicBaseUrl,
+        status: "completed",
+        detail: `Commit: ${commitUrl ?? commitSha}; Target: ${targetBranch}; Verification: passed; Review: ${review.summary}`,
+      });
       return undefined;
     }
     if (run.source.type === "jira") {
@@ -511,13 +524,6 @@ function buildSourceSquashMergeComment(
 ): string {
   const commitLine = commitUrl ? `${commitUrl}` : commitSha;
   return `TaskSmith squash-merged this issue to ${targetBranch}:\n\n${commitLine}\n\nVerification: passed\nReview: ${review.summary}\nRun: ${publicBaseUrl}/runs/${run.id}`;
-}
-
-function parseIssueNumber(sourceKey: string): number | undefined {
-  const match = /#(\d+)$/u.exec(sourceKey);
-  if (!match) return undefined;
-  const parsed = Number.parseInt(match[1] ?? "", 10);
-  return Number.isInteger(parsed) ? parsed : undefined;
 }
 
 function loadJiraClientConfig(): JiraClientConfig {

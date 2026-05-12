@@ -8,6 +8,7 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { FileStore } from "../src/storage/file-store.js";
 import type { AppConfig } from "../src/domain/types.js";
+import { upsertGitHubSourceStatusComment } from "../src/sources/github-status-comment.js";
 
 interface PollResponse {
   checkedRepositories: number;
@@ -22,6 +23,10 @@ interface RunsResponse {
 
 interface ClaimsResponse {
   claims: Array<{ key: string; provider: string; sourceType: string; sourceKey: string; repoKey: string; runId?: string; status: string }>;
+}
+
+interface GhLogEntry {
+  args: [string, string, ...string[]];
 }
 
 const rootDir = process.cwd();
@@ -41,6 +46,26 @@ async function main(): Promise<void> {
 
   await mkdir(binDir, { recursive: true });
   await writeFakeGh(path.join(binDir, "gh"), ghLogPath);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${binDir}${path.delimiter}${originalPath ?? ""}`;
+  try {
+    await upsertGitHubSourceStatusComment({ type: "github", owner: "octo", repo: "widgets", ghConfigDir: "/tmp/fake-gh-config" }, 42, {
+      claimKey: "github:octo/widgets#42",
+      runId: "run-existing",
+      repoKey: "source-gh-e2e",
+      publicBaseUrl: "https://tasksmith.example.test",
+      status: "run_created",
+    });
+    await upsertGitHubSourceStatusComment({ type: "github", owner: "octo", repo: "widgets", ghConfigDir: "/tmp/fake-gh-config" }, 42, {
+      claimKey: "github:octo/widgets#42",
+      runId: "run-existing",
+      repoKey: "source-gh-e2e",
+      publicBaseUrl: "https://tasksmith.example.test",
+      status: "running",
+    });
+  } finally {
+    process.env.PATH = originalPath;
+  }
   await writeFile(configPath, JSON.stringify(buildConfig(), null, 2), "utf8");
 
   const jiraServer = createFakeJiraServer(jiraComments);
@@ -106,9 +131,14 @@ async function main(): Promise<void> {
     assertEqual(secondPoll.skippedExistingClaims, 2, "second poll should skip existing claims");
 
     const ghLog = await readFile(ghLogPath, "utf8");
+    const ghEntries = parseGhLogEntries(ghLog);
     assert(ghLog.includes('"issue","list"'), "gh issue list should be called");
-    assert(ghLog.includes('"issue","comment"'), "gh issue comment should be called");
+    const createdComments = ghEntries.filter((entry) => entry.args[0] === "api" && entry.args.includes("POST") && entry.args.includes("/repos/octo/widgets/issues/42/comments"));
+    const updatedComments = ghEntries.filter((entry) => entry.args[0] === "api" && entry.args.includes("PATCH"));
+    assertEqual(createdComments.length, 1, "GitHub source status comment should be created once");
+    assert(updatedComments.length >= 1, "GitHub source status updates should reuse the existing comment");
     assert(ghLog.includes("https://tasksmith.example.test/runs/"), "GitHub claim comment should include public run URL");
+    assert(ghLog.includes("tasksmith:source-status:github:octo/widgets#42"), "GitHub claim comment should include durable status marker");
     assert(jiraComments.some((comment) => comment.includes("https://tasksmith.example.test/runs/")), "Jira claim comment should include public run URL");
 
     console.log("Source pickup e2e passed");
@@ -281,12 +311,38 @@ async function writeFakeGh(filePath: string, logPath: string): Promise<void> {
   const script = `#!/usr/bin/env node
 const fs = require('node:fs');
 const args = process.argv.slice(2);
+const commentsPath = ${JSON.stringify(`${logPath}.comments.json`)};
+function readComments() {
+  try { return JSON.parse(fs.readFileSync(commentsPath, 'utf8')); } catch { return []; }
+}
+function writeComments(comments) { fs.writeFileSync(commentsPath, JSON.stringify(comments)); }
 fs.appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args }) + '\\n');
 if (args[0] === 'issue' && args[1] === 'list') {
   console.log(JSON.stringify([{ number: 42, title: 'Fix widget sorting', body: 'The widget list should sort newest first.', url: 'https://github.com/octo/widgets/issues/42', labels: [{ name: 'tasksmith' }] }]));
   process.exit(0);
 }
-if (args[0] === 'issue' && args[1] === 'comment') {
+if (args[0] === 'api' && args.includes('/repos/octo/widgets/issues/42/comments') && !args.includes('POST')) {
+  console.log(JSON.stringify(readComments()));
+  process.exit(0);
+}
+if (args[0] === 'api' && args.includes('POST') && args.includes('/repos/octo/widgets/issues/42/comments')) {
+  const bodyArg = args.find((arg) => arg.startsWith('body=')) || 'body=';
+  const comments = readComments();
+  const comment = { id: comments.length + 1, body: bodyArg.slice('body='.length) };
+  comments.push(comment);
+  writeComments(comments);
+  console.log(JSON.stringify(comment));
+  process.exit(0);
+}
+if (args[0] === 'api' && args.includes('PATCH')) {
+  const bodyArg = args.find((arg) => arg.startsWith('body=')) || 'body=';
+  const id = Number((args.find((arg) => /\\/comments\\/\\d+$/.test(arg)) || '').split('/').pop());
+  const comments = readComments();
+  const index = comments.findIndex((comment) => comment.id === id);
+  if (index === -1) process.exit(3);
+  comments[index] = { id, body: bodyArg.slice('body='.length) };
+  writeComments(comments);
+  console.log(JSON.stringify(comments[index]));
   process.exit(0);
 }
 console.error('unexpected gh args: ' + args.join(' '));
@@ -335,6 +391,22 @@ async function parseResponse<T>(response: Response): Promise<T> {
   const body = text ? JSON.parse(text) as T : {} as T;
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${text}`);
   return body;
+}
+
+function parseGhLogEntries(log: string): GhLogEntry[] {
+  return log
+    .split("\n")
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as unknown)
+    .filter(isGhLogEntry);
+}
+
+function isGhLogEntry(value: unknown): value is GhLogEntry {
+  return isRecord(value) && Array.isArray(value.args) && value.args.length >= 2 && value.args.every((arg) => typeof arg === "string");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function assert(value: boolean, message: string): asserts value {

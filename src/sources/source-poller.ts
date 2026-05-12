@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import type { AppConfig, CreateRunInput, GitHubProviderConfig, IssueProviderConfig, RepositoryConfig, RunSourceSnapshot } from "../domain/types.js";
 import type { FileStore } from "../storage/file-store.js";
 import type { RuntimeManager } from "../runtime/runtime-manager.js";
+import { buildSourceStatusComment, upsertGitHubSourceStatusComment } from "./github-status-comment.js";
 
 interface GitHubIssueLabel {
   name: string;
@@ -111,7 +112,13 @@ export class SourcePoller {
         await this.runtime.startRun(run);
         createdRuns += 1;
         try {
-          await commentOnGitHubIssue(gitProvider, issue.number, buildClaimComment(run.id, repoKey, this.config.publicBaseUrl));
+          await upsertGitHubSourceStatusComment(gitProvider, issue.number, {
+            claimKey,
+            runId: run.id,
+            repoKey,
+            publicBaseUrl: this.config.publicBaseUrl,
+            status: "run_created",
+          });
         } catch (error: unknown) {
           await this.store.updateSourceClaim(claimKey, { error: `GitHub comment failed: ${error instanceof Error ? error.message : String(error)}` });
         }
@@ -162,7 +169,13 @@ export class SourcePoller {
         await this.runtime.startRun(run);
         createdRuns += 1;
         try {
-          await commentOnJiraIssue(client, issue.key, buildClaimComment(run.id, repoKey, this.config.publicBaseUrl));
+          await commentOnJiraIssue(client, issue.key, buildSourceStatusComment({
+            claimKey,
+            runId: run.id,
+            repoKey,
+            publicBaseUrl: this.config.publicBaseUrl,
+            status: "run_created",
+          }));
         } catch (error: unknown) {
           await this.store.updateSourceClaim(claimKey, { error: `Jira comment failed: ${error instanceof Error ? error.message : String(error)}` });
         }
@@ -246,15 +259,6 @@ async function listGitHubIssues(
   const parsed = JSON.parse(result.stdout) as unknown;
   if (!Array.isArray(parsed)) throw new Error("gh issue list returned non-array JSON");
   return parsed.map(parseGitHubIssue);
-}
-
-async function commentOnGitHubIssue(provider: GitHubProviderConfig, issueNumber: number, body: string): Promise<void> {
-  const result = await runGh(["issue", "comment", String(issueNumber), "--repo", `${provider.owner}/${provider.repo}`, "--body", body], provider.ghConfigDir);
-  if (result.code !== 0) throw new Error(`gh issue comment failed: ${result.stderr || result.stdout}`);
-}
-
-function buildClaimComment(runId: string, repoKey: string, publicBaseUrl: string): string {
-  return `TaskSmith picked up this issue.\n\nRun: ${publicBaseUrl}/runs/${runId}\nRepository: ${repoKey}\nAgent: Pi`;
 }
 
 function loadJiraClientConfig(): JiraClientConfig {

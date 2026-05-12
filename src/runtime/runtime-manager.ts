@@ -9,6 +9,7 @@ import { CodeRabbitCliReviewer } from "../review/coderabbit-cli-reviewer.js";
 import { DemoRuntime, type RuntimeSink } from "./demo-adapter.js";
 import { PiRuntime } from "./pi-adapter.js";
 import { WorkspacePreparer } from "./workspace-preparer.js";
+import { parseGitHubIssueNumber, upsertGitHubSourceStatusComment } from "../sources/github-status-comment.js";
 
 type StartableRuntime = RuntimeHandle & { start(): Promise<void> };
 
@@ -26,6 +27,7 @@ export class RuntimeManager {
     private readonly ciWatcher: GitHubCiWatcher,
     private readonly repositories: Readonly<Record<string, RepositoryConfig>>,
     private readonly globalWorkflow: SingleTaskWorkflowConfig,
+    private readonly publicBaseUrl: string,
   ) {
     this.workspacePreparer = new WorkspacePreparer(repositories);
   }
@@ -109,6 +111,7 @@ export class RuntimeManager {
       },
       setFailed: async (error) => {
         await this.store.updateRun(run.id, { status: "failed", error, finishedAt: new Date().toISOString() });
+        await this.updateFailedSourceStatus(run, error);
         await this.emit(run.id, { type: "error", message: "Runtime failed", detail: error });
         await this.emit(run.id, { type: "attempt_done", status: "failed", summary: error });
         await this.emit(run.id, { type: "run_status", status: "failed" });
@@ -139,6 +142,7 @@ export class RuntimeManager {
       const latestBeforeFailure = await this.store.getRun(runId);
       if (!isRunEligibleForVerificationTransition(latestBeforeFailure, run.currentAttemptId)) return;
       await this.store.updateRun(runId, { status: "failed", error: `Verification failed: ${result.summary}`, finishedAt: new Date().toISOString() });
+      await this.updateFailedSourceStatus(latestBeforeFailure, `Verification failed: ${result.summary}`);
       await this.emit(runId, { type: "error", message: "Verification failed", detail: result.summary });
       await this.emit(runId, { type: "run_status", status: "failed", detail: result.summary });
       return;
@@ -189,6 +193,7 @@ export class RuntimeManager {
     if (reviewAfterCodeRabbit.status === "failed") {
       if (await this.startReviewFixAttemptIfAllowed(reviewAfterCodeRabbit)) return;
       await this.store.updateRun(runId, { status: "failed", error: `Review failed: ${reviewAfterCodeRabbit.summary}`, finishedAt: new Date().toISOString() });
+      await this.updateFailedSourceStatus(run, `Review failed: ${blockingReviewSummary(reviewAfterCodeRabbit)}`);
       await this.emit(runId, { type: "error", message: "Review blocked delivery; review fix attempts exhausted", detail: blockingReviewSummary(reviewAfterCodeRabbit) });
       await this.emit(runId, { type: "run_status", status: "failed", detail: blockingReviewSummary(reviewAfterCodeRabbit) });
       return;
@@ -264,6 +269,7 @@ export class RuntimeManager {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       await this.store.updateRun(runId, { status: "failed", error: `Delivery failed: ${message}`, finishedAt: new Date().toISOString() });
+      await this.updateFailedSourceStatus(await this.requireRun(runId), `Delivery failed: ${message}`);
       await this.emit(runId, { type: "error", message: "Delivery failed", detail: message });
       await this.emit(runId, { type: "run_status", status: "failed", detail: message });
     }
@@ -284,6 +290,7 @@ export class RuntimeManager {
     if (ciResult.status === "failed") {
       if (await this.startCiFixAttemptIfAllowed(latest, ciResult)) return;
       await this.store.updateRun(runId, { status: "failed", error: `CI failed: ${ciResult.summary}`, finishedAt: new Date().toISOString() });
+      await this.updateFailedSourceStatus(latest, `CI failed: ${ciResult.summary}`);
       await this.emit(runId, { type: "error", message: "CI failed", detail: ciResult.log ? `${ciResult.summary}\n\n${ciResult.log}` : ciResult.summary });
       await this.emit(runId, { type: "run_status", status: "failed", detail: ciResult.summary });
       return;
@@ -323,6 +330,26 @@ export class RuntimeManager {
       void this.runAttempt(updated, this.store.pathsForRun(latest.id), this.createSink(updated), { prepareWorkspace: false });
     }, 0).unref();
     return true;
+  }
+
+  private async updateFailedSourceStatus(run: RunRecord | undefined, detail: string): Promise<void> {
+    if (!run?.source || run.source.type !== "github_issue") return;
+    const provider = this.repositories[run.repoKey]?.gitProvider;
+    if (!provider || provider.type !== "github") return;
+    const issueNumber = parseGitHubIssueNumber(run.source.key);
+    if (issueNumber === undefined) return;
+    try {
+      await upsertGitHubSourceStatusComment(provider, issueNumber, {
+        claimKey: run.claimKey ?? `github:${run.source.key}`,
+        runId: run.id,
+        repoKey: run.repoKey,
+        publicBaseUrl: this.publicBaseUrl,
+        status: "failed",
+        detail,
+      });
+    } catch {
+      // Source status comments are best-effort and must not mask the terminal run failure.
+    }
   }
 
   private async emit(runId: string, event: NormalizedRunEvent): Promise<StoredRunEvent> {
