@@ -136,7 +136,9 @@ async function main(): Promise<void> {
     const crLog = await readFile(crLogPath, "utf8");
     assert(countOccurrences(crLog, '"review","--agent"') === 3, "CodeRabbit CLI should run before ready PR delivery, CI fix delivery, and squash delivery");
     assert(crLog.includes('"--dir"'), "CodeRabbit CLI should receive workspace dir");
-    assert(crLog.includes('"--base","main"'), "CodeRabbit CLI should receive base branch");
+    assert(!crLog.includes('"--base","main"'), "CodeRabbit CLI should receive a concrete diff base, not the target branch name");
+    assert(countOccurrences(crLog, '"--base","') === 3, "CodeRabbit CLI should receive a base for each review");
+    assert(/"--base","[0-9a-f]{40}"/u.test(crLog), "CodeRabbit CLI should receive a merge-base commit SHA");
 
     console.log("Delivery e2e passed");
   } finally {
@@ -255,6 +257,11 @@ function readState() {
 function writeState(state) { fs.writeFileSync(statePath, JSON.stringify(state)); }
 fs.appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args }) + '\\n');
 if (args[0] === 'review' && args.includes('--agent')) {
+  const base = args[args.indexOf('--base') + 1];
+  if (!/^[0-9a-f]{40}$/i.test(base || '')) {
+    console.error('expected CodeRabbit --base to be a merge-base SHA, got: ' + base);
+    process.exit(9);
+  }
   const state = readState();
   state.reviews = (state.reviews || 0) + 1;
   writeState(state);

@@ -13,6 +13,17 @@ interface CommandResult {
   timedOut: boolean;
 }
 
+interface CodeRabbitReviewContext {
+  currentBranch?: string;
+  headSha?: string;
+  baseRef: string;
+  baseSha?: string;
+  targetBranch: string;
+  changedFiles: string[];
+  command: string;
+  args: string[];
+}
+
 export interface CodeRabbitReviewResult {
   status: ReviewRecord["status"] | "skipped";
   summary: string;
@@ -36,12 +47,21 @@ export class CodeRabbitCliReviewer {
     await emit({ type: "run_status", status: "reviewing", detail: "Running CodeRabbit CLI review" });
     await emit({ type: "review", status: "running", summary: "Running CodeRabbit CLI review with structured agent output" });
 
-    const baseBranch = repo?.defaultBranch ?? "main";
-    const args = ["review", "--agent", "--dir", paths.workspaceDir, "--base", baseBranch];
+    const targetBranch = repo?.workflow?.mergeTargetBranch ?? repo?.defaultBranch ?? "main";
+    const gitContext = await inspectGitContext(paths.workspaceDir, targetBranch);
+    const baseRef = gitContext.baseSha ?? gitContext.headSha ?? targetBranch;
+    const args = ["review", "--agent", "--dir", paths.workspaceDir, "--base", baseRef];
+    const reviewContext: CodeRabbitReviewContext = {
+      ...gitContext,
+      baseRef,
+      targetBranch,
+      command: config.cli.command,
+      args,
+    };
     await emit({ type: "command", command: `${config.cli.command} ${args.map(shellQuote).join(" ")}` });
 
     const result = await runCommand(config.cli.command, args, paths.workspaceDir, config.cli.timeoutMs);
-    await persistCodeRabbitLogs(paths, result);
+    await persistCodeRabbitLogs(paths, result, reviewContext);
 
     const combinedOutput = [result.stdout, result.stderr, result.error ?? ""].join("\n");
     const parsed = parseAgentOutput(result.stdout);
@@ -159,12 +179,53 @@ function summarizeFindings(status: ReviewRecord["status"], findings: readonly Re
   return `${status === "failed" ? "CodeRabbit CLI review blocked delivery" : "CodeRabbit CLI review passed with findings"}: ${parts.join(", ")}.`;
 }
 
-async function persistCodeRabbitLogs(paths: RunPaths, result: CommandResult): Promise<void> {
+async function persistCodeRabbitLogs(paths: RunPaths, result: CommandResult, context: CodeRabbitReviewContext): Promise<void> {
   await mkdir(paths.logsDir, { recursive: true });
   await Promise.all([
+    writeFile(path.join(paths.logsDir, "coderabbit-cli.context.json"), redactForStorage(JSON.stringify(context, null, 2)), "utf8"),
     writeFile(path.join(paths.logsDir, "coderabbit-cli.stdout.jsonl"), redactForStorage(result.stdout), "utf8"),
     writeFile(path.join(paths.logsDir, "coderabbit-cli.stderr.txt"), redactForStorage(result.stderr), "utf8"),
   ]);
+}
+
+async function inspectGitContext(cwd: string, targetBranch: string): Promise<Omit<CodeRabbitReviewContext, "baseRef" | "targetBranch" | "command" | "args">> {
+  const [branchResult, headResult, remoteTargetResult, localTargetResult, statusResult] = await Promise.all([
+    runGit(["branch", "--show-current"], cwd),
+    runGit(["rev-parse", "HEAD"], cwd),
+    runGit(["rev-parse", "--verify", `refs/remotes/origin/${targetBranch}^{commit}`], cwd),
+    runGit(["rev-parse", "--verify", `${targetBranch}^{commit}`], cwd),
+    runGit(["status", "--porcelain=v1", "--untracked-files=all"], cwd),
+  ]);
+  const targetRef = remoteTargetResult.code === 0 ? `refs/remotes/origin/${targetBranch}` : localTargetResult.code === 0 ? targetBranch : undefined;
+  const baseSha = targetRef ? await readMergeBase(cwd, targetRef) : undefined;
+  return {
+    ...(branchResult.code === 0 && branchResult.stdout.trim() ? { currentBranch: branchResult.stdout.trim() } : {}),
+    ...(headResult.code === 0 && isCommitSha(headResult.stdout.trim()) ? { headSha: headResult.stdout.trim() } : {}),
+    ...(baseSha ? { baseSha } : {}),
+    changedFiles: statusResult.code === 0 ? parseChangedFiles(statusResult.stdout) : [],
+  };
+}
+
+async function readMergeBase(cwd: string, targetRef: string): Promise<string | undefined> {
+  const result = await runGit(["merge-base", "HEAD", targetRef], cwd);
+  const sha = result.stdout.trim();
+  return result.code === 0 && isCommitSha(sha) ? sha : undefined;
+}
+
+async function runGit(args: readonly string[], cwd: string): Promise<CommandResult> {
+  return runCommand("git", args, cwd, 30_000);
+}
+
+function parseChangedFiles(statusOutput: string): string[] {
+  return statusOutput
+    .split("\n")
+    .filter((line) => line.trim().length > 0)
+    .map((line) => line.slice(3).trim())
+    .filter(Boolean);
+}
+
+function isCommitSha(value: string): boolean {
+  return /^[0-9a-f]{40}$/iu.test(value);
 }
 
 function parseJsonObject(value: string): Record<string, unknown> | undefined {

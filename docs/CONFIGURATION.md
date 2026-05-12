@@ -330,8 +330,10 @@ Then opt in only the repositories that should use CodeRabbit:
 TaskSmith runs:
 
 ```bash
-cr review --agent --dir <run-workspace> --base <defaultBranch>
+cr review --agent --dir <run-workspace> --base <merge-base-sha>
 ```
+
+The base is the merge-base between the workspace `HEAD` and `origin/<mergeTargetBranch>` (or the configured default branch when no merge target is set). If that cannot be resolved, TaskSmith falls back to the workspace `HEAD` SHA and then the target branch name. This keeps direct-merge (`squash_merge_main`) and dirty-workspace reviews anchored to the pre-change merge target instead of asking CodeRabbit to compare `main` to `main`. TaskSmith also writes `coderabbit-cli.context.json` alongside stdout/stderr logs with the current branch, selected base, target branch, and changed files for diagnosis.
 
 The `--agent` JSON findings are converted into TaskSmith review findings. `critical` and `major` CodeRabbit findings are treated as blocking (`critical`/`high` in TaskSmith severity); lower-severity findings are recorded but do not block delivery. If CodeRabbit reports a rate limit, times out, is not installed, or otherwise cannot run, TaskSmith emits a skipped review event and continues with its own deterministic verification plus fresh-context review as the sufficient gate.
 
