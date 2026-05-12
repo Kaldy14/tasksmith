@@ -64,7 +64,7 @@ export function parseGitHubIssueNumber(sourceKey: string): number | undefined {
 
 async function findExistingStatusComment(provider: GitHubProviderConfig, issueNumber: number, claimKey: string): Promise<GitHubComment | undefined> {
   const result = await runGh(["api", `/repos/${provider.owner}/${provider.repo}/issues/${issueNumber}/comments`, "--paginate"], provider.ghConfigDir);
-  if (result.code !== 0) return undefined;
+  if (result.code !== 0) throw new Error(`gh issue comments lookup failed: ${result.stderr || result.stdout}`);
   const parsed = JSON.parse(result.stdout) as unknown;
   const comments = parseGitHubComments(parsed);
   const marker = statusMarker(claimKey);

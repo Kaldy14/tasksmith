@@ -47,6 +47,7 @@ async function main(): Promise<void> {
   await mkdir(binDir, { recursive: true });
   await writeFakeGh(path.join(binDir, "gh"), ghLogPath);
   const originalPath = process.env.PATH;
+  const failCommentsPath = `${ghLogPath}.fail-comments`;
   process.env.PATH = `${binDir}${path.delimiter}${originalPath ?? ""}`;
   try {
     await upsertGitHubSourceStatusComment({ type: "github", owner: "octo", repo: "widgets", ghConfigDir: "/tmp/fake-gh-config" }, 42, {
@@ -63,6 +64,18 @@ async function main(): Promise<void> {
       publicBaseUrl: "https://tasksmith.example.test",
       status: "running",
     });
+    await writeFile(failCommentsPath, "1", "utf8");
+    await assertRejects(
+      upsertGitHubSourceStatusComment({ type: "github", owner: "octo", repo: "widgets", ghConfigDir: "/tmp/fake-gh-config" }, 42, {
+        claimKey: "github:octo/widgets#42",
+        runId: "run-existing",
+        repoKey: "source-gh-e2e",
+        publicBaseUrl: "https://tasksmith.example.test",
+        status: "running",
+      }),
+      "GitHub source status lookup failure should prevent comment creation",
+    );
+    await rm(failCommentsPath, { force: true });
   } finally {
     process.env.PATH = originalPath;
   }
@@ -312,6 +325,7 @@ async function writeFakeGh(filePath: string, logPath: string): Promise<void> {
 const fs = require('node:fs');
 const args = process.argv.slice(2);
 const commentsPath = ${JSON.stringify(`${logPath}.comments.json`)};
+const failCommentsPath = ${JSON.stringify(`${logPath}.fail-comments`)};
 function readComments() {
   try { return JSON.parse(fs.readFileSync(commentsPath, 'utf8')); } catch { return []; }
 }
@@ -322,6 +336,10 @@ if (args[0] === 'issue' && args[1] === 'list') {
   process.exit(0);
 }
 if (args[0] === 'api' && args.includes('/repos/octo/widgets/issues/42/comments') && !args.includes('POST')) {
+  if (fs.existsSync(failCommentsPath)) {
+    console.error('simulated comments lookup failure');
+    process.exit(4);
+  }
   console.log(JSON.stringify(readComments()));
   process.exit(0);
 }
@@ -415,6 +433,15 @@ function assert(value: boolean, message: string): asserts value {
 
 function assertEqual(actual: unknown, expected: unknown, message: string): void {
   if (actual !== expected) throw new Error(`${message}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+}
+
+async function assertRejects(promise: Promise<unknown>, message: string): Promise<void> {
+  try {
+    await promise;
+  } catch {
+    return;
+  }
+  throw new Error(message);
 }
 
 main().catch((error: unknown) => {
