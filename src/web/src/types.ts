@@ -49,6 +49,13 @@ export interface PullRequestSummary {
   status: "open";
 }
 
+export interface RunLease {
+  workerId: string;
+  expiresAt: string;
+  lastHeartbeatAt?: string;
+  attempt: number;
+}
+
 export interface RunRecord {
   id: string;
   sourceType: RunSourceType;
@@ -72,6 +79,7 @@ export interface RunRecord {
   sessionId?: string;
   sessionFile?: string;
   error?: string;
+  lease?: RunLease;
 }
 
 export interface CreateRunInput {

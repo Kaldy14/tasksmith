@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { FileStore } from "../storage/file-store.js";
 import type { RuntimeManager } from "./runtime-manager.js";
 
@@ -5,6 +6,7 @@ export class RunScheduler {
   private wakeTimer: NodeJS.Timeout | undefined;
   private processing = false;
   private stopped = false;
+  private readonly workerId = `worker-${process.pid}-${randomUUID().slice(0, 8)}`;
 
   constructor(
     private readonly store: FileStore,
@@ -48,10 +50,11 @@ export class RunScheduler {
     this.processing = true;
     try {
       while (!this.stopped) {
-        const run = await this.store.claimNextQueuedRun();
+        await this.store.recoverStaleLeases(this.runtime.leaseTimeoutMs);
+        const run = await this.store.claimNextQueuedRun(this.workerId, this.runtime.leaseTimeoutMs);
         if (!run) break;
         try {
-          await this.runtime.startRun(run);
+          await this.runtime.startRun(run, this.workerId);
         } catch (error: unknown) {
           const message = error instanceof Error ? error.message : String(error);
           await this.store.updateRun(run.id, { status: "failed", error: `Scheduler failed to start run: ${message}`, finishedAt: new Date().toISOString() });

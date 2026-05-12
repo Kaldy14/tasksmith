@@ -305,6 +305,17 @@ const migrations: readonly Migration[] = [
       sql`ALTER TABLE tasksmith_runs ADD COLUMN IF NOT EXISTS review_fix_attempts integer NOT NULL DEFAULT 0`,
     ],
   },
+  {
+    version: 7,
+    name: "worker_run_leases",
+    statements: [
+      sql`ALTER TABLE tasksmith_runs ADD COLUMN IF NOT EXISTS worker_id text`,
+      sql`ALTER TABLE tasksmith_runs ADD COLUMN IF NOT EXISTS lease_expires_at timestamptz`,
+      sql`ALTER TABLE tasksmith_runs ADD COLUMN IF NOT EXISTS last_heartbeat_at timestamptz`,
+      sql`ALTER TABLE tasksmith_runs ADD COLUMN IF NOT EXISTS lease_attempt integer NOT NULL DEFAULT 0`,
+      sql`CREATE INDEX IF NOT EXISTS tasksmith_runs_lease_idx ON tasksmith_runs(status, lease_expires_at)`,
+    ],
+  },
 ];
 
 export class PostgresMetadataIndex {
@@ -364,14 +375,14 @@ export class PostgresMetadataIndex {
     return rows[0] ? runFromRow(rows[0]) : undefined;
   }
 
-  async claimNextQueuedRun(now: string): Promise<RunRecord | undefined> {
+  async claimNextQueuedRun(now: string, workerId: string, leaseTimeoutMs: number): Promise<RunRecord | undefined> {
     const maxAttempts = 25;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       const candidates = await this.db.select().from(runs).where(eq(runs.status, "queued")).orderBy(sql`${runs.createdAt} ASC`).limit(1);
       const candidate = candidates[0];
       if (!candidate) return undefined;
       const claimed = await this.db.update(runs)
-        .set({ status: "claimed", startedAt: now, updatedAt: now })
+        .set({ status: "claimed", startedAt: now, updatedAt: now, workerId, leaseExpiresAt: addMs(now, leaseTimeoutMs), lastHeartbeatAt: now, leaseAttempt: sql`${runs.leaseAttempt} + 1` })
         .where(and(eq(runs.id, candidate.id), eq(runs.status, "queued")))
         .returning();
       if (claimed[0]) return runFromRow(claimed[0]);
@@ -379,13 +390,26 @@ export class PostgresMetadataIndex {
     return undefined;
   }
 
-  async markActiveRunsFailedOnBoot(finishedAt: string): Promise<RunRecord[]> {
+  async heartbeatRunLease(runId: string, workerId: string, now: string, leaseTimeoutMs: number): Promise<RunRecord | undefined> {
+    const terminal: RunStatus[] = ["completed", "pr_created", "failed", "cancelled"];
+    const rows = await this.db.update(runs)
+      .set({ lastHeartbeatAt: now, leaseExpiresAt: addMs(now, leaseTimeoutMs), updatedAt: now })
+      .where(and(eq(runs.id, runId), eq(runs.workerId, workerId), notInArray(runs.status, terminal)))
+      .returning();
+    return rows[0] ? runFromRow(rows[0]) : undefined;
+  }
+
+  async recoverStaleLeases(now: string, leaseTimeoutMs: number): Promise<RunRecord[]> {
     const inactive: RunStatus[] = ["queued", "completed", "pr_created", "failed", "cancelled"];
     const rows = await this.db.select().from(runs).where(notInArray(runs.status, inactive));
     const changed: RunRecord[] = [];
     for (const row of rows) {
       const run = runFromRow(row);
-      const updated: RunRecord = { ...run, status: "failed", error: "TaskSmith process restarted before this run finished.", finishedAt, updatedAt: finishedAt };
+      if (!isLeaseExpired(run, now, leaseTimeoutMs)) continue;
+      const recoverable = run.status === "claimed" || run.status === "preparing";
+      const updated: RunRecord = recoverable
+        ? clearLease({ ...run, status: "queued", error: "Recovered stale worker lease; requeued before runtime became non-resumable.", updatedAt: now })
+        : clearLease({ ...run, status: "failed", error: `Stale worker lease expired while run was ${run.status}; runtime/session resume is not supported for this status.`, finishedAt: now, updatedAt: now });
       await this.upsertRun(updated, pathsFromRun(updated));
       changed.push(updated);
     }
@@ -643,6 +667,10 @@ function runToInsert(run: RunRecord, paths: RunPaths): typeof runs.$inferInsert 
     sessionId: run.sessionId ?? null,
     sessionFile: run.sessionFile ?? null,
     error: run.error ?? null,
+    workerId: run.lease?.workerId ?? null,
+    leaseExpiresAt: run.lease?.expiresAt ?? null,
+    lastHeartbeatAt: run.lease?.lastHeartbeatAt ?? null,
+    leaseAttempt: run.lease?.attempt ?? 0,
     sourceSnapshot: run.source ?? null,
     pullRequest: run.pullRequest ?? null,
     artifactPaths: pathsToArtifactIndex(paths),
@@ -672,6 +700,10 @@ function runToUpdate(run: RunRecord, paths: RunPaths): Partial<typeof runs.$infe
     sessionId: run.sessionId ?? null,
     sessionFile: run.sessionFile ?? null,
     error: run.error ?? null,
+    workerId: run.lease?.workerId ?? null,
+    leaseExpiresAt: run.lease?.expiresAt ?? null,
+    lastHeartbeatAt: run.lease?.lastHeartbeatAt ?? null,
+    leaseAttempt: run.lease?.attempt ?? 0,
     sourceSnapshot: run.source ?? null,
     pullRequest: run.pullRequest ?? null,
     artifactPaths: pathsToArtifactIndex(paths),
@@ -705,6 +737,7 @@ function runFromRow(row: RunRow): RunRecord {
     ...(row.sessionId ? { sessionId: row.sessionId } : {}),
     ...(row.sessionFile ? { sessionFile: row.sessionFile } : {}),
     ...(row.error ? { error: row.error } : {}),
+    ...(row.workerId && row.leaseExpiresAt ? { lease: { workerId: row.workerId, expiresAt: row.leaseExpiresAt, ...(row.lastHeartbeatAt ? { lastHeartbeatAt: row.lastHeartbeatAt } : {}), attempt: row.leaseAttempt } } : {}),
   };
 }
 
@@ -894,6 +927,20 @@ function eventCheckpointToUpdate(paths: RunPaths, event: StoredRunEvent | undefi
     lastEventCreatedAt: event?.createdAt ?? null,
     updatedAt,
   };
+}
+
+function addMs(iso: string, ms: number): string {
+  return new Date(new Date(iso).getTime() + ms).toISOString();
+}
+
+function isLeaseExpired(run: RunRecord, now: string, leaseTimeoutMs: number): boolean {
+  const expiresAt = run.lease?.expiresAt ?? (run.lease?.lastHeartbeatAt ? addMs(run.lease.lastHeartbeatAt, leaseTimeoutMs) : run.updatedAt);
+  return expiresAt <= now;
+}
+
+function clearLease(run: RunRecord): RunRecord {
+  const { lease: _lease, ...rest } = run;
+  return rest;
 }
 
 function pathsToArtifactIndex(paths: RunPaths): Record<string, string> {

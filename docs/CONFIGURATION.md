@@ -72,6 +72,17 @@ PUT /api/admin/config
 
 When `TASKSMITH_AUTH_ENABLED=1`, this admin surface requires a Better Auth session. Without auth, keep it internal/tailnet-only and do not expose it publicly.
 
+## Queue leases and crash recovery
+
+When a scheduler worker claims a queued Run it stores `workerId`, `leaseExpiresAt`, `lastHeartbeatAt`, and `leaseAttempt`, then heartbeats while the runtime/workflow is active. Configure timings with environment variables:
+
+```bash
+TASKSMITH_QUEUE_LEASE_TIMEOUT_MS=120000
+TASKSMITH_QUEUE_HEARTBEAT_INTERVAL_MS=30000
+```
+
+A Run with an unexpired lease is not claimed by another worker. On boot and each scheduler tick, expired leases are recovered deterministically: `claimed` and `preparing` Runs are requeued because no non-resumable runtime phase should have started; `running`, `fixing`, `verifying`, `reviewing`, `delivering`, `creating_pr`, and `watching_ci` are failed because TaskSmith does not yet support safe Pi/session resume for those phases. Recovery writes a Run status event with the stale-lease outcome for operators.
+
 ## Workspace initialization commands
 
 Each repository can define commands that run after the checkout is prepared and before Pi/demo implementation starts:

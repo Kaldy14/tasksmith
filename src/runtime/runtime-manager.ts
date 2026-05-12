@@ -28,11 +28,13 @@ export class RuntimeManager {
     private readonly repositories: Readonly<Record<string, RepositoryConfig>>,
     private readonly globalWorkflow: SingleTaskWorkflowConfig,
     private readonly publicBaseUrl: string,
+    public readonly leaseTimeoutMs = 120_000,
+    public readonly heartbeatIntervalMs = 30_000,
   ) {
     this.workspacePreparer = new WorkspacePreparer(repositories);
   }
 
-  async startRun(run: RunRecord): Promise<void> {
+  async startRun(run: RunRecord, workerId: string): Promise<void> {
     const latest = await this.requireRun(run.id);
     if (isTerminalRunStatus(latest.status)) return;
     const sink = this.createSink(latest);
@@ -40,7 +42,7 @@ export class RuntimeManager {
     const startedAt = latest.startedAt ?? new Date().toISOString();
     const updated = await this.store.updateRun(latest.id, { status: "preparing", startedAt });
     await this.emit(latest.id, { type: "run_status", status: "preparing", detail: `Preparing ${updated.adapter} runtime` });
-    void this.runAttempt(updated, paths, sink, { prepareWorkspace: true });
+    void this.runAttempt(updated, paths, sink, { prepareWorkspace: true, workerId });
   }
 
   async sendControl(runId: string, kind: ControlKind, message: string): Promise<void> {
@@ -82,8 +84,12 @@ export class RuntimeManager {
     await runtime.abortBash();
   }
 
-  private async runAttempt(run: RunRecord, paths: RunPaths, sink: RuntimeSink, options: { prepareWorkspace: boolean }): Promise<void> {
+  private async runAttempt(run: RunRecord, paths: RunPaths, sink: RuntimeSink, options: { prepareWorkspace: boolean; workerId?: string | undefined }): Promise<void> {
     let runtime: StartableRuntime | undefined;
+    const heartbeat = options.workerId ? setInterval(() => {
+      void this.store.heartbeatRunLease(run.id, options.workerId!, this.leaseTimeoutMs);
+    }, this.heartbeatIntervalMs) : undefined;
+    heartbeat?.unref();
     try {
       if (options.prepareWorkspace) {
         await this.workspacePreparer.prepare(run, paths, async (event) => {
@@ -99,6 +105,7 @@ export class RuntimeManager {
     } catch (error: unknown) {
       await sink.setFailed(error instanceof Error ? error.message : String(error));
     } finally {
+      if (heartbeat) clearInterval(heartbeat);
       if (this.active.get(run.id) === runtime) this.active.delete(run.id);
       await runtime?.dispose();
     }
@@ -174,7 +181,7 @@ export class RuntimeManager {
     await this.emit(latest.id, { type: "run_status", status: "fixing", detail: `Fix attempt ${completedFixAttempts + 1} of ${maxFixAttempts}: ${verifierSummary}` });
     await this.emit(latest.id, { type: "user_message", control: "follow_up", text: fixPrompt, delivery: "forwarded" });
     setTimeout(() => {
-      void this.runAttempt(updated, this.store.pathsForRun(latest.id), this.createSink(updated), { prepareWorkspace: false });
+      void this.runAttempt(updated, this.store.pathsForRun(latest.id), this.createSink(updated), { prepareWorkspace: false, workerId: latest.lease?.workerId });
     }, 0).unref();
     return true;
   }
@@ -244,7 +251,7 @@ export class RuntimeManager {
     await this.emit(latest.id, { type: "run_status", status: "fixing", detail: `Review fix attempt ${nextReviewFixAttempt} of ${maxFixAttempts}: ${blockingReviewSummary(review)}` });
     await this.emit(latest.id, { type: "user_message", control: "follow_up", text: fixPrompt, delivery: "forwarded" });
     setTimeout(() => {
-      void this.runAttempt(updated, this.store.pathsForRun(latest.id), this.createSink(updated), { prepareWorkspace: false });
+      void this.runAttempt(updated, this.store.pathsForRun(latest.id), this.createSink(updated), { prepareWorkspace: false, workerId: latest.lease?.workerId });
     }, 0).unref();
     return true;
   }
@@ -330,7 +337,7 @@ export class RuntimeManager {
     await this.emit(latest.id, { type: "run_status", status: "fixing", detail: `CI fix attempt ${nextCiFixAttempt} of ${maxFixAttempts}: ${ciResult.summary}` });
     await this.emit(latest.id, { type: "user_message", control: "follow_up", text: fixPrompt, delivery: "forwarded" });
     setTimeout(() => {
-      void this.runAttempt(updated, this.store.pathsForRun(latest.id), this.createSink(updated), { prepareWorkspace: false });
+      void this.runAttempt(updated, this.store.pathsForRun(latest.id), this.createSink(updated), { prepareWorkspace: false, workerId: latest.lease?.workerId });
     }, 0).unref();
     return true;
   }

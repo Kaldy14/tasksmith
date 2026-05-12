@@ -34,6 +34,7 @@ export function loadConfig(): AppConfig {
   const configFilePath = getConfigFilePath();
   const fileConfig = parseConfigFile(configFilePath);
   const databaseUrl = parseOptionalDatabaseUrl(process.env.TASKSMITH_DATABASE_URL);
+  const queue = parseQueueLeaseConfig();
   return {
     port: parsePort(process.env.PORT ?? "3000"),
     host: process.env.HOST ?? "0.0.0.0",
@@ -50,7 +51,22 @@ export function loadConfig(): AppConfig {
     sourceFlow: fileConfig?.sourceFlow ?? defaultSourceFlow(),
     workflow: fileConfig?.workflow ?? defaultWorkflow(),
     verification: parseVerificationConfig(fileConfig?.defaultVerify),
+    queue,
   };
+}
+
+function parseQueueLeaseConfig(): AppConfig["queue"] {
+  const leaseTimeoutMs = parsePositiveInteger(process.env.TASKSMITH_QUEUE_LEASE_TIMEOUT_MS, 120_000, "TASKSMITH_QUEUE_LEASE_TIMEOUT_MS");
+  const heartbeatIntervalMs = parsePositiveInteger(process.env.TASKSMITH_QUEUE_HEARTBEAT_INTERVAL_MS, 30_000, "TASKSMITH_QUEUE_HEARTBEAT_INTERVAL_MS");
+  if (heartbeatIntervalMs >= leaseTimeoutMs) throw new Error("TASKSMITH_QUEUE_HEARTBEAT_INTERVAL_MS must be less than TASKSMITH_QUEUE_LEASE_TIMEOUT_MS");
+  return { leaseTimeoutMs, heartbeatIntervalMs };
+}
+
+function parsePositiveInteger(raw: string | undefined, fallback: number, label: string): number {
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) throw new Error(`${label} must be a positive integer`);
+  return parsed;
 }
 
 function parseVerificationConfig(fileDefault: VerificationCommandConfig[] | undefined): VerificationConfig {

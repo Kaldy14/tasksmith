@@ -22,7 +22,7 @@ const verifier = new DeterministicVerifier(config.verification, config.repositor
 const reviewer = new FreshContextReviewer();
 const delivery = new PullRequestDelivery(config, store);
 const ciWatcher = new GitHubCiWatcher(config.repositories, config.workflow);
-const runtime = new RuntimeManager(store, hub, verifier, reviewer, delivery, ciWatcher, config.repositories, config.workflow, config.publicBaseUrl);
+const runtime = new RuntimeManager(store, hub, verifier, reviewer, delivery, ciWatcher, config.repositories, config.workflow, config.publicBaseUrl, config.queue.leaseTimeoutMs, config.queue.heartbeatIntervalMs);
 const scheduler = new RunScheduler(store, runtime);
 scheduler.start();
 const sourcePoller = new SourcePoller(config, store);

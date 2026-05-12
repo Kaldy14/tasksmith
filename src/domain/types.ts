@@ -40,6 +40,13 @@ export interface PullRequestSummary {
   status: "open";
 }
 
+export interface RunLease {
+  workerId: string;
+  expiresAt: string;
+  lastHeartbeatAt?: string;
+  attempt: number;
+}
+
 export interface RunRecord {
   id: string;
   sourceType: RunSourceType;
@@ -63,6 +70,7 @@ export interface RunRecord {
   sessionId?: string;
   sessionFile?: string;
   error?: string;
+  lease?: RunLease;
 }
 
 export interface CreateRunInput {
@@ -235,6 +243,11 @@ export interface VerificationConfig {
   defaultCommands: VerificationCommandConfig[];
 }
 
+export interface QueueLeaseConfig {
+  leaseTimeoutMs: number;
+  heartbeatIntervalMs: number;
+}
+
 export type AuthConfig =
   | {
       enabled: false;
@@ -348,6 +361,7 @@ export interface AppConfig {
   sourceFlow: SourceFlowConfig;
   workflow: SingleTaskWorkflowConfig;
   verification: VerificationConfig;
+  queue: QueueLeaseConfig;
 }
 
 export interface RuntimeHandle {

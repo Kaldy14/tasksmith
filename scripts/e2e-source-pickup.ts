@@ -254,6 +254,7 @@ function buildFileStoreConfig(tempDir: string): AppConfig {
       deliveryMode: "ready_pr",
     },
     verification: { defaultCommands: [] },
+    queue: { leaseTimeoutMs: 120_000, heartbeatIntervalMs: 30_000 },
   } as AppConfig;
 }
 

@@ -145,9 +145,9 @@ export class FileStore {
     return [...state.runs].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }
 
-  async claimNextQueuedRun(): Promise<RunRecord | undefined> {
+  async claimNextQueuedRun(workerId: string, leaseTimeoutMs: number): Promise<RunRecord | undefined> {
     if (this.metadataIndex) {
-      const claimed = await this.metadataIndex.claimNextQueuedRun(this.now());
+      const claimed = await this.metadataIndex.claimNextQueuedRun(this.now(), workerId, leaseTimeoutMs);
       if (claimed) await this.writeMetadata(claimed);
       return claimed;
     }
@@ -159,7 +159,18 @@ export class FileStore {
         .sort((left, right) => left.run.createdAt.localeCompare(right.run.createdAt))[0]?.runIndex;
       if (index === undefined) return runs;
       const now = this.now();
-      claimed = { ...runs[index]!, status: "claimed", startedAt: now, updatedAt: now };
+      claimed = {
+        ...runs[index]!,
+        status: "claimed",
+        startedAt: now,
+        updatedAt: now,
+        lease: {
+          workerId,
+          expiresAt: addMs(now, leaseTimeoutMs),
+          lastHeartbeatAt: now,
+          attempt: (runs[index]!.lease?.attempt ?? 0) + 1,
+        },
+      };
       return runs.map((run, runIndex) => runIndex === index ? claimed! : run);
     });
     if (claimed) await this.writeMetadata(claimed);
@@ -350,7 +361,7 @@ export class FileStore {
     if (this.metadataIndex) {
       const run = await this.metadataIndex.getRun(runId);
       if (!run) throw new Error(`Run not found: ${runId}`);
-      const updated = { ...run, ...patch, updatedAt: this.now() };
+      const updated = normalizeLeaseForStatus({ ...run, ...patch, updatedAt: this.now() });
       await this.writeMetadata(updated);
       await this.metadataIndex.upsertRun(updated, this.pathsForRun(updated.id));
       return updated;
@@ -358,7 +369,7 @@ export class FileStore {
     let updated: RunRecord | undefined;
     await this.mutateRuns((runs) => runs.map((run) => {
       if (run.id !== runId) return run;
-      updated = { ...run, ...patch, updatedAt: this.now() };
+      updated = normalizeLeaseForStatus({ ...run, ...patch, updatedAt: this.now() });
       return updated;
     }));
     if (!updated) throw new Error(`Run not found: ${runId}`);
@@ -413,29 +424,49 @@ export class FileStore {
     return this.readLegacyEvents(runId, afterSequence);
   }
 
-  async markActiveRunsFailedOnBoot(): Promise<void> {
+  async heartbeatRunLease(runId: string, workerId: string, leaseTimeoutMs: number): Promise<RunRecord | undefined> {
     if (this.metadataIndex) {
-      const finishedAt = this.now();
-      const changed = await this.metadataIndex.markActiveRunsFailedOnBoot(finishedAt);
-      for (const run of changed) await this.writeMetadata(run);
-      return;
+      const updated = await this.metadataIndex.heartbeatRunLease(runId, workerId, this.now(), leaseTimeoutMs);
+      if (updated) await this.writeMetadata(updated);
+      return updated;
     }
-    const inactive = new Set<RunStatus>(["queued", "completed", "pr_created", "failed", "cancelled"]);
+    let updated: RunRecord | undefined;
+    await this.mutateRuns((runs) => runs.map((run) => {
+      if (run.id !== runId || run.lease?.workerId !== workerId || isTerminalStatus(run.status)) return run;
+      const now = this.now();
+      updated = { ...run, lease: { ...run.lease, lastHeartbeatAt: now, expiresAt: addMs(now, leaseTimeoutMs) }, updatedAt: now };
+      return updated;
+    }));
+    if (updated) await this.writeMetadata(updated);
+    return updated;
+  }
+
+  async recoverStaleLeases(leaseTimeoutMs: number): Promise<RunRecord[]> {
+    if (this.metadataIndex) {
+      const changed = await this.metadataIndex.recoverStaleLeases(this.now(), leaseTimeoutMs);
+      for (const run of changed) await this.writeMetadata(run);
+      for (const run of changed) await this.appendEvent(run, staleLeaseEvent(run));
+      return changed;
+    }
     const changed: RunRecord[] = [];
     await this.mutateRuns((runs) => runs.map((run) => {
-      if (inactive.has(run.status)) return run;
+      if (isTerminalStatus(run.status) || run.status === "queued") return run;
+      if (!isLeaseExpired(run, this.now(), leaseTimeoutMs)) return run;
       const now = this.now();
-      const updated = {
-        ...run,
-        status: "failed" as const,
-        error: "TaskSmith process restarted before this run finished.",
-        finishedAt: now,
-        updatedAt: now,
-      };
+      const recoverable = run.status === "claimed" || run.status === "preparing";
+      const updated: RunRecord = recoverable
+        ? clearLease({ ...run, status: "queued", error: "Recovered stale worker lease; requeued before runtime became non-resumable.", updatedAt: now })
+        : clearLease({ ...run, status: "failed", error: `Stale worker lease expired while run was ${run.status}; runtime/session resume is not supported for this status.`, finishedAt: now, updatedAt: now });
       changed.push(updated);
       return updated;
     }));
     for (const run of changed) await this.writeMetadata(run);
+    for (const run of changed) await this.appendEvent(run, staleLeaseEvent(run));
+    return changed;
+  }
+
+  async markActiveRunsFailedOnBoot(): Promise<void> {
+    await this.recoverStaleLeases(this.config.queue.leaseTimeoutMs);
   }
 
   async copyPiAuthMaterial(paths: RunPaths): Promise<string[]> {
@@ -475,7 +506,8 @@ export class FileStore {
 
   private async readRunsState(): Promise<RunsStateFile> {
     const text = await readFile(this.runsStatePath, "utf8");
-    return JSON.parse(text) as RunsStateFile;
+    const state = JSON.parse(text) as RunsStateFile;
+    return { ...state, runs: state.runs.map(normalizeRunLeaseShape) };
   }
 
   private async readClaimsState(): Promise<ClaimsStateFile> {
@@ -696,6 +728,52 @@ function isProcessRunning(pid: number): boolean {
     const code = error instanceof Error && "code" in error ? (error as NodeJS.ErrnoException).code : undefined;
     return code !== "ESRCH";
   }
+}
+
+function addMs(iso: string, ms: number): string {
+  return new Date(new Date(iso).getTime() + ms).toISOString();
+}
+
+function isTerminalStatus(status: RunStatus): boolean {
+  return status === "completed" || status === "pr_created" || status === "failed" || status === "cancelled";
+}
+
+function normalizeRunLeaseShape(run: RunRecord & { workerId?: string; leaseExpiresAt?: string; lastHeartbeatAt?: string; leaseAttempt?: number }): RunRecord {
+  const { workerId, leaseExpiresAt, lastHeartbeatAt, leaseAttempt, ...rest } = run;
+  if (rest.lease || !workerId || !leaseExpiresAt) return rest;
+  return {
+    ...rest,
+    lease: {
+      workerId,
+      expiresAt: leaseExpiresAt,
+      ...(lastHeartbeatAt ? { lastHeartbeatAt } : {}),
+      attempt: leaseAttempt ?? 0,
+    },
+  };
+}
+
+function isLeaseExpired(run: RunRecord, now: string, leaseTimeoutMs: number): boolean {
+  const expiresAt = run.lease?.expiresAt ?? (run.lease?.lastHeartbeatAt ? addMs(run.lease.lastHeartbeatAt, leaseTimeoutMs) : run.updatedAt);
+  return expiresAt <= now;
+}
+
+function normalizeLeaseForStatus(run: RunRecord): RunRecord {
+  return isTerminalStatus(run.status) ? clearLease(run) : run;
+}
+
+function clearLease(run: RunRecord): RunRecord {
+  const { lease: _lease, ...rest } = run;
+  return rest;
+}
+
+function staleLeaseEvent(run: RunRecord): NormalizedRunEvent {
+  return {
+    type: "run_status",
+    status: run.status,
+    detail: run.status === "queued"
+      ? "Stale worker lease expired; run was safely requeued from claimed/preparing."
+      : `Stale worker lease expired; ${run.status === "failed" ? "run failed because runtime/session resume is not supported for this status." : "run recovered."}`,
+  };
 }
 
 async function appendJsonl(file: string, value: unknown): Promise<void> {
