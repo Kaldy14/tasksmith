@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { ControlKind, NormalizedRunEvent, RunPaths, RunRecord, RuntimeHandle } from "../domain/types.js";
@@ -38,6 +38,7 @@ export class DemoRuntime implements RuntimeHandle {
       await this.maybeWriteDemoChange();
       await this.maybeWriteVerifierFixDemoChange();
       await this.maybeWriteCiFixDemoChange();
+      await this.maybeWriteReviewFixDemoChange();
       await this.maybeWriteSecretDemoChange();
       await this.flushSteering();
       await this.flushFollowUps();
@@ -103,8 +104,19 @@ export class DemoRuntime implements RuntimeHandle {
     await this.sink.emit({ type: "command_output", command: "write TASKSMITH_DEMO_CI_FIXED.txt", output: "TASKSMITH_DEMO_CI_FIXED.txt\n", toolCallId: "demo-write-ci-fix" });
   }
 
+  private async maybeWriteReviewFixDemoChange(): Promise<void> {
+    if (!this.paths || !this.run.prompt.includes("TASKSMITH_DEMO_FIX_REVIEW") || (this.run.reviewFixAttempts ?? 0) <= 0) return;
+    const filePath = path.join(this.paths.workspaceDir, "src", "leaked-secret.ts");
+    await rm(filePath, { force: true });
+    const fixedPath = path.join(this.paths.workspaceDir, "TASKSMITH_DEMO_REVIEW_FIXED.txt");
+    await mkdir(path.dirname(fixedPath), { recursive: true });
+    await writeFile(fixedPath, `Demo review fix created by ${this.run.currentAttemptId}\n`, "utf8");
+    await this.sink.emit({ type: "command", command: "remove src/leaked-secret.ts; write TASKSMITH_DEMO_REVIEW_FIXED.txt", toolCallId: "demo-write-review-fix" });
+    await this.sink.emit({ type: "command_output", command: "remove src/leaked-secret.ts; write TASKSMITH_DEMO_REVIEW_FIXED.txt", output: "TASKSMITH_DEMO_REVIEW_FIXED.txt\n", toolCallId: "demo-write-review-fix" });
+  }
+
   private async maybeWriteSecretDemoChange(): Promise<void> {
-    if (!this.paths || !this.run.prompt.includes("TASKSMITH_DEMO_WRITE_SECRET_CHANGE")) return;
+    if (!this.paths || !this.run.prompt.includes("TASKSMITH_DEMO_WRITE_SECRET_CHANGE") || (this.run.reviewFixAttempts ?? 0) > 0) return;
     const filePath = path.join(this.paths.workspaceDir, "src", "leaked-secret.ts");
     await mkdir(path.dirname(filePath), { recursive: true });
     await writeFile(filePath, "export const API_TOKEN = 'super-secret-demo-token';\n", "utf8");

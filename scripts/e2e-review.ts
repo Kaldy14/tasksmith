@@ -12,7 +12,10 @@ interface RunResponse {
     id: string;
     status: string;
     title: string;
+    currentAttemptId: string;
     error?: string;
+    ciFixAttempts: number;
+    reviewFixAttempts: number;
     pullRequest?: { url: string; number?: number; branch: string; status: string };
   };
 }
@@ -78,6 +81,7 @@ async function main(): Promise<void> {
     const baseUrl = `http://127.0.0.1:${port}`;
     await waitForHealth(baseUrl, 20_000);
     await testReviewBlocksSecretFinding(baseUrl, ghLogPath);
+    await testReviewFixAttemptContinuesDelivery(baseUrl);
     await testReviewPassesAndAppearsInPr(baseUrl, ghLogPath, tempDir);
     console.log("Review e2e passed");
   } finally {
@@ -120,6 +124,28 @@ async function testReviewBlocksSecretFinding(baseUrl: string, ghLogPath: string)
   } catch {
     // No gh calls is also acceptable.
   }
+}
+
+async function testReviewFixAttemptContinuesDelivery(baseUrl: string): Promise<void> {
+  const created = await postJson<RunResponse>(`${baseUrl}/api/runs`, {
+    title: "Review fix attempt e2e",
+    repoKey: "review-fix-e2e",
+    adapter: "demo",
+    prompt: "TASKSMITH_DEMO_WRITE_SECRET_CHANGE TASKSMITH_DEMO_FIX_REVIEW Produce a review finding, then fix it when TaskSmith asks for a review fix.",
+  });
+
+  const completed = await waitForRunStatus(baseUrl, created.run.id, "pr_created", 45_000);
+  assertEqual(completed.run.reviewFixAttempts, 1, "review fix attempts should be tracked separately");
+  assertEqual(completed.run.ciFixAttempts, 0, "review fix should not consume CI fix attempts");
+  assert(completed.run.currentAttemptId === "attempt-2", "review fix should run as a second runtime attempt");
+
+  const review = await getJson<ReviewResponse>(`${baseUrl}/api/runs/${created.run.id}/review`);
+  assertEqual(review.review.status, "passed", "review should pass after review fix attempt");
+
+  const events = await getJson<EventsResponse>(`${baseUrl}/api/runs/${created.run.id}/events`);
+  const eventText = JSON.stringify(events);
+  assert(eventText.includes("Review fix attempt 1 of 1"), "events should show bounded review fix reason");
+  assert(eventText.includes('"status":"fixing"'), "events should show fixing status");
 }
 
 async function testReviewPassesAndAppearsInPr(baseUrl: string, ghLogPath: string, tempDir: string): Promise<void> {
@@ -171,10 +197,22 @@ function buildConfig(remoteUrl: string): unknown {
       type: "single_task_sandcastle",
       stages: ["plan", "implement", "deep_review", "fix", "deliver"],
       maxFixAttempts: 1,
+      maxReviewFixAttempts: 1,
       deliveryMode: "ready_pr",
     },
     repos: {
-      "review-block-e2e": { ...repoBase, displayName: "Review block fixture" },
+      "review-block-e2e": {
+        ...repoBase,
+        displayName: "Review block fixture",
+        workflow: {
+          type: "single_task_sandcastle",
+          stages: ["plan", "implement", "deep_review", "fix", "deliver"],
+          maxFixAttempts: 1,
+          maxReviewFixAttempts: 0,
+          deliveryMode: "ready_pr",
+        },
+      },
+      "review-fix-e2e": { ...repoBase, displayName: "Review fix fixture" },
       "review-pass-e2e": { ...repoBase, displayName: "Review pass fixture" },
     },
   };

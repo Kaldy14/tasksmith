@@ -52,6 +52,7 @@ export interface RunRecord {
   status: RunStatus;
   currentAttemptId: string;
   ciFixAttempts: number;
+  reviewFixAttempts: number;
   runDir: string;
   workspaceDir: string;
   createdAt: string;
@@ -207,6 +208,7 @@ export interface SingleTaskWorkflowConfig {
   stages: ["plan", "implement", "deep_review", "fix", "deliver"];
   maxFixAttempts: number;
   maxCiFixAttempts: number;
+  maxReviewFixAttempts: number;
   ciPollIntervalMs: number;
   ciTimeoutMs: number;
   deliveryMode: DeliveryMode;

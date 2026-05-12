@@ -26,6 +26,7 @@ Minimal shape:
     "stages": ["plan", "implement", "deep_review", "fix", "deliver"],
     "maxFixAttempts": 1,
     "maxCiFixAttempts": 1,
+    "maxReviewFixAttempts": 1,
     "ciPollIntervalMs": 30000,
     "ciTimeoutMs": 900000,
     "deliveryMode": "ready_pr"
@@ -345,7 +346,13 @@ The personal example config opts the `tasksmith` repository into `squash_merge_m
 
 If deterministic verification fails, TaskSmith checks `repos.<repoKey>.workflow.maxFixAttempts` first, then the global `workflow.maxFixAttempts`. When the limit is greater than zero, the Run enters `fixing`, advances to the next attempt id (for example `attempt-2`), gives the runtime a follow-up containing the verifier summary and a smallest-fix-only instruction, and reruns verification after that attempt completes. No PR is created during verifier-fix attempts. If the configured attempts are exhausted, the Run fails with the verifier summary.
 
-After verification passes, TaskSmith runs a fresh-context diff review before delivery. The current reviewer is a deterministic guardrail pass over the final workspace diff: it persists `review-diff.patch` and `review-diff-stat.txt`, emits structured findings, and blocks delivery on `high` or `critical` findings such as secret-looking values or local env/dependency files. If `codeRabbit.cli.enabled` is true for the repository, TaskSmith then runs CodeRabbit CLI and merges its findings into the persisted review record. Review metadata is stored in `state/reviews.json` and exposed at `GET /api/reviews` and `GET /api/runs/:id/review`.
+After verification passes, TaskSmith runs a fresh-context diff review before delivery. The current reviewer is a deterministic guardrail pass over the final workspace diff: it persists `review-diff.patch` and `review-diff-stat.txt`, emits structured findings, and blocks delivery on `high` or `critical` findings such as secret-looking values or local env/dependency files.
+
+If `codeRabbit.cli.enabled` is true for the repository, TaskSmith then runs CodeRabbit CLI and merges its findings into the persisted review record.
+
+When blocking review findings remain, `maxReviewFixAttempts` (default `1`) starts a separate bounded review-fix attempt with a concise, smallest-fix-only prompt built from the blocking findings. This review-fix budget does not consume verifier or CI fix budgets. Review finding text is treated only as untrusted prompt context.
+
+Review metadata is stored in `state/reviews.json` and exposed at `GET /api/reviews` and `GET /api/runs/:id/review`.
 
 If verification and review pass in `ready_pr` mode, TaskSmith checks for a non-empty diff, creates a branch named `tasksmith/<source-or-title>-<run-suffix>`, commits all workspace changes with the TaskSmith bot identity, pushes the branch, and runs `gh pr create` without `--draft`. PR metadata is stored in `state/pull-requests.json` and exposed at `GET /api/pull-requests`. Source issues receive a PR-link comment when credentials are available.
 

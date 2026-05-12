@@ -61,6 +61,7 @@ export interface RunRecord {
   status: RunStatus;
   currentAttemptId: string;
   ciFixAttempts: number;
+  reviewFixAttempts: number;
   runDir: string;
   workspaceDir: string;
   createdAt: string;
@@ -86,7 +87,7 @@ export interface RepositorySummary {
   hasGitUrl: boolean;
   gitProvider?: { type: "github"; owner: string; repo: string };
   issueProvider?: { type: "github_issues" | "jira" };
-  workflow?: { deliveryMode: "ready_pr" | "squash_merge_main"; maxFixAttempts: number; maxCiFixAttempts: number };
+  workflow?: { deliveryMode: "ready_pr" | "squash_merge_main"; maxFixAttempts: number; maxCiFixAttempts: number; maxReviewFixAttempts: number };
   codeRabbit?: { enabled: boolean; cliEnabled: boolean };
   initCommandCount: number;
   hasVerificationProfile: boolean;
@@ -111,6 +112,7 @@ export interface PublicAppConfig {
     stages: ["plan", "implement", "deep_review", "fix", "deliver"];
     maxFixAttempts: number;
     maxCiFixAttempts: number;
+    maxReviewFixAttempts: number;
     ciPollIntervalMs: number;
     ciTimeoutMs: number;
     deliveryMode: "ready_pr" | "squash_merge_main";

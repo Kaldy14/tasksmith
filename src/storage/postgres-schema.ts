@@ -19,6 +19,7 @@ export const runs = pgTable("tasksmith_runs", {
   status: text("status").notNull(),
   currentAttemptId: text("current_attempt_id").notNull(),
   ciFixAttempts: integer("ci_fix_attempts").notNull().default(0),
+  reviewFixAttempts: integer("review_fix_attempts").notNull().default(0),
   claimKey: text("claim_key"),
   runDir: text("run_dir").notNull(),
   workspaceDir: text("workspace_dir").notNull(),
