@@ -145,6 +145,27 @@ export class FileStore {
     return [...state.runs].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }
 
+  async claimNextQueuedRun(): Promise<RunRecord | undefined> {
+    if (this.metadataIndex) {
+      const claimed = await this.metadataIndex.claimNextQueuedRun(this.now());
+      if (claimed) await this.writeMetadata(claimed);
+      return claimed;
+    }
+    let claimed: RunRecord | undefined;
+    await this.mutateRuns((runs) => {
+      const index = runs
+        .map((run, runIndex) => ({ run, runIndex }))
+        .filter(({ run }) => run.status === "queued")
+        .sort((left, right) => left.run.createdAt.localeCompare(right.run.createdAt))[0]?.runIndex;
+      if (index === undefined) return runs;
+      const now = this.now();
+      claimed = { ...runs[index]!, status: "claimed", startedAt: now, updatedAt: now };
+      return runs.map((run, runIndex) => runIndex === index ? claimed! : run);
+    });
+    if (claimed) await this.writeMetadata(claimed);
+    return claimed;
+  }
+
   async listSourceClaims(): Promise<SourceClaim[]> {
     if (this.metadataIndex) return this.metadataIndex.listSourceClaims();
     const state = await this.readClaimsState();
@@ -399,10 +420,10 @@ export class FileStore {
       for (const run of changed) await this.writeMetadata(run);
       return;
     }
-    const terminal = new Set<RunStatus>(["completed", "pr_created", "failed", "cancelled"]);
+    const inactive = new Set<RunStatus>(["queued", "completed", "pr_created", "failed", "cancelled"]);
     const changed: RunRecord[] = [];
     await this.mutateRuns((runs) => runs.map((run) => {
-      if (terminal.has(run.status)) return run;
+      if (inactive.has(run.status)) return run;
       const now = this.now();
       const updated = {
         ...run,

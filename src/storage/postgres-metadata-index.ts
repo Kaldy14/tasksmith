@@ -364,9 +364,24 @@ export class PostgresMetadataIndex {
     return rows[0] ? runFromRow(rows[0]) : undefined;
   }
 
+  async claimNextQueuedRun(now: string): Promise<RunRecord | undefined> {
+    const maxAttempts = 25;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const candidates = await this.db.select().from(runs).where(eq(runs.status, "queued")).orderBy(sql`${runs.createdAt} ASC`).limit(1);
+      const candidate = candidates[0];
+      if (!candidate) return undefined;
+      const claimed = await this.db.update(runs)
+        .set({ status: "claimed", startedAt: now, updatedAt: now })
+        .where(and(eq(runs.id, candidate.id), eq(runs.status, "queued")))
+        .returning();
+      if (claimed[0]) return runFromRow(claimed[0]);
+    }
+    return undefined;
+  }
+
   async markActiveRunsFailedOnBoot(finishedAt: string): Promise<RunRecord[]> {
-    const terminal: RunStatus[] = ["completed", "pr_created", "failed", "cancelled"];
-    const rows = await this.db.select().from(runs).where(notInArray(runs.status, terminal));
+    const inactive: RunStatus[] = ["queued", "completed", "pr_created", "failed", "cancelled"];
+    const rows = await this.db.select().from(runs).where(notInArray(runs.status, inactive));
     const changed: RunRecord[] = [];
     for (const row of rows) {
       const run = runFromRow(row);

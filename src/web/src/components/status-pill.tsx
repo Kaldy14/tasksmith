@@ -4,6 +4,7 @@ import type { RunStatus } from "@/types";
 
 const STATUS_LABEL: Record<RunStatus, string> = {
   queued: "queued",
+  claimed: "claimed",
   preparing: "preparing",
   running: "running",
   waiting_for_control: "waiting",
@@ -19,12 +20,28 @@ const STATUS_LABEL: Record<RunStatus, string> = {
   cancelled: "cancelled",
 };
 
-function variantFor(status: RunStatus): "running" | "completed" | "failed" | "waiting" | "queued" {
-  if (status === "running" || status === "preparing" || status === "verifying" || status === "fixing" || status === "reviewing" || status === "watching_ci" || status === "delivering" || status === "creating_pr") return "running";
-  if (status === "completed" || status === "pr_created") return "completed";
-  if (status === "failed" || status === "cancelled") return "failed";
-  if (status === "waiting_for_control") return "waiting";
-  return "queued";
+type StatusVariant = "running" | "completed" | "failed" | "waiting" | "queued";
+
+const STATUS_TO_VARIANT = {
+  queued: "queued",
+  claimed: "running",
+  preparing: "running",
+  running: "running",
+  waiting_for_control: "waiting",
+  verifying: "running",
+  fixing: "running",
+  reviewing: "running",
+  watching_ci: "running",
+  delivering: "running",
+  creating_pr: "running",
+  pr_created: "completed",
+  completed: "completed",
+  failed: "failed",
+  cancelled: "failed",
+} as const satisfies Readonly<Record<RunStatus, StatusVariant>>;
+
+function variantFor(status: RunStatus): StatusVariant {
+  return STATUS_TO_VARIANT[status];
 }
 
 interface StatusPillProps {

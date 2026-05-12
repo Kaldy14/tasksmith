@@ -180,9 +180,9 @@ Responsibilities:
 ### Run states
 
 ```txt
-queued
-claimed
-preparing
+queued       (durably persisted, not yet owned by scheduler)
+claimed      (single scheduler worker atomically claimed it)
+preparing    (runtime workspace/runtime startup in progress)
 running
 waiting_for_user
 verifying

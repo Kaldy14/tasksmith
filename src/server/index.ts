@@ -5,6 +5,7 @@ import { FileStore } from "../storage/file-store.js";
 import { EventHub } from "./event-hub.js";
 import { FreshContextReviewer } from "../review/fresh-context-reviewer.js";
 import { RuntimeManager } from "../runtime/runtime-manager.js";
+import { RunScheduler } from "../runtime/run-scheduler.js";
 import { DeterministicVerifier } from "../verifier/deterministic-verifier.js";
 import { SourcePoller } from "../sources/source-poller.js";
 import { createTaskSmithAuthService } from "../auth/tasksmith-auth.js";
@@ -22,11 +23,13 @@ const reviewer = new FreshContextReviewer();
 const delivery = new PullRequestDelivery(config, store);
 const ciWatcher = new GitHubCiWatcher(config.repositories, config.workflow);
 const runtime = new RuntimeManager(store, hub, verifier, reviewer, delivery, ciWatcher, config.repositories, config.workflow, config.publicBaseUrl);
-const sourcePoller = new SourcePoller(config, store, runtime);
+const scheduler = new RunScheduler(store, runtime);
+scheduler.start();
+const sourcePoller = new SourcePoller(config, store);
 if (process.env.TASKSMITH_SOURCE_POLLING === "1" || process.env.TASKSMITH_SOURCE_POLLING === "true") {
   startSourcePolling(sourcePoller, config.sourceFlow.pollIntervalSeconds);
 }
-const server = createTaskSmithServer({ config, store, runtime, sourcePoller, hub, auth });
+const server = createTaskSmithServer({ config, store, runtime, scheduler, sourcePoller, hub, auth });
 
 server.listen(config.port, config.host, () => {
   console.log(`TaskSmith listening on http://${config.host}:${config.port}`);
@@ -48,6 +51,7 @@ function startSourcePolling(sourcePoller: SourcePoller, intervalSeconds: number)
     inFlight = true;
     try {
       const result = await sourcePoller.pollOnce();
+      if (result.createdRuns > 0) scheduler.wake();
       if (result.errors.length > 0) console.error("TaskSmith source poll errors", JSON.stringify(result.errors));
     } catch (error: unknown) {
       console.error("TaskSmith source poll failed", error);
@@ -61,6 +65,7 @@ function startSourcePolling(sourcePoller: SourcePoller, intervalSeconds: number)
 }
 
 function shutdown(): void {
+  scheduler.stop();
   server.close(() => {
     void Promise.all([store.close(), auth?.close() ?? Promise.resolve()]).finally(() => process.exit(0));
   });

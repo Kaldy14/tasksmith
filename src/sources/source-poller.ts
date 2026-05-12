@@ -1,7 +1,6 @@
 import { spawn } from "node:child_process";
 import type { AppConfig, CreateRunInput, GitHubProviderConfig, IssueProviderConfig, RepositoryConfig, RunSourceSnapshot } from "../domain/types.js";
 import type { FileStore } from "../storage/file-store.js";
-import type { RuntimeManager } from "../runtime/runtime-manager.js";
 import { buildSourceStatusComment, upsertGitHubSourceStatusComment } from "./github-status-comment.js";
 
 interface GitHubIssueLabel {
@@ -58,7 +57,6 @@ export class SourcePoller {
   constructor(
     private readonly config: AppConfig,
     private readonly store: FileStore,
-    private readonly runtime: RuntimeManager,
   ) {}
 
   async pollOnce(): Promise<SourcePollResult> {
@@ -109,7 +107,6 @@ export class SourcePoller {
       try {
         const run = await this.store.createRun(buildRunInput(repoKey, repo, issue, claimKey, sourceKey));
         await this.store.updateSourceClaim(claimKey, { status: "run_created", runId: run.id });
-        await this.runtime.startRun(run);
         createdRuns += 1;
         try {
           await upsertGitHubSourceStatusComment(gitProvider, issue.number, {
@@ -166,7 +163,6 @@ export class SourcePoller {
       try {
         const run = await this.store.createRun(buildJiraRunInput(repoKey, repo, issue, claimKey, sourceUrl));
         await this.store.updateSourceClaim(claimKey, { status: "run_created", runId: run.id });
-        await this.runtime.startRun(run);
         createdRuns += 1;
         try {
           await commentOnJiraIssue(client, issue.key, buildSourceStatusComment({

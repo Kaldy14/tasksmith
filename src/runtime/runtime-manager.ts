@@ -33,11 +33,14 @@ export class RuntimeManager {
   }
 
   async startRun(run: RunRecord): Promise<void> {
-    const sink = this.createSink(run);
-    const paths = this.store.pathsForRun(run.id);
-    await this.store.updateRun(run.id, { status: "preparing", startedAt: new Date().toISOString() });
-    await this.emit(run.id, { type: "run_status", status: "preparing", detail: `Preparing ${run.adapter} runtime` });
-    void this.runAttempt(run, paths, sink, { prepareWorkspace: true });
+    const latest = await this.requireRun(run.id);
+    if (isTerminalRunStatus(latest.status)) return;
+    const sink = this.createSink(latest);
+    const paths = this.store.pathsForRun(latest.id);
+    const startedAt = latest.startedAt ?? new Date().toISOString();
+    const updated = await this.store.updateRun(latest.id, { status: "preparing", startedAt });
+    await this.emit(latest.id, { type: "run_status", status: "preparing", detail: `Preparing ${updated.adapter} runtime` });
+    void this.runAttempt(updated, paths, sink, { prepareWorkspace: true });
   }
 
   async sendControl(runId: string, kind: ControlKind, message: string): Promise<void> {

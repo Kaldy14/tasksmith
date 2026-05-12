@@ -7,6 +7,7 @@ import type { AppConfig, RepositoryConfig } from "../domain/types.js";
 import { parseControlInput, parseCreateRunInput } from "../domain/validation.js";
 import type { FileStore } from "../storage/file-store.js";
 import type { RuntimeManager } from "../runtime/runtime-manager.js";
+import type { RunScheduler } from "../runtime/run-scheduler.js";
 import type { SourcePoller } from "../sources/source-poller.js";
 import type { TaskSmithAuthService } from "../auth/tasksmith-auth.js";
 import { readEditableConfig, saveEditableConfig } from "./config.js";
@@ -16,6 +17,7 @@ interface ServerDeps {
   config: AppConfig;
   store: FileStore;
   runtime: RuntimeManager;
+  scheduler: RunScheduler;
   sourcePoller: SourcePoller;
   hub: EventHub;
   auth: TaskSmithAuthService | undefined;
@@ -99,7 +101,9 @@ async function routeHttp(deps: ServerDeps, req: IncomingMessage, res: ServerResp
   }
 
   if (method === "POST" && url.pathname === "/api/sources/poll") {
-    sendJson(res, 202, await deps.sourcePoller.pollOnce());
+    const result = await deps.sourcePoller.pollOnce();
+    deps.scheduler.wake();
+    sendJson(res, 202, result);
     return;
   }
 
@@ -126,7 +130,7 @@ async function routeHttp(deps: ServerDeps, req: IncomingMessage, res: ServerResp
   if (method === "POST" && url.pathname === "/api/runs") {
     const input = parseCreateRunInput(await readJson(req));
     const run = await deps.store.createRun(input);
-    await deps.runtime.startRun(run);
+    deps.scheduler.wake();
     sendJson(res, 201, { run });
     return;
   }

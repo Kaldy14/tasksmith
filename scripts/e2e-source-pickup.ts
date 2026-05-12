@@ -114,17 +114,22 @@ async function main(): Promise<void> {
 
     const firstPoll = await postJson<PollResponse>(`${baseUrl}/api/sources/poll`, {});
     assertEqual(firstPoll.checkedRepositories, 2, "checked repository count");
-    assertEqual(firstPoll.createdRuns, 2, "created run count");
+    assertEqual(firstPoll.createdRuns, 3, "created run count");
     assertEqual(firstPoll.skippedExistingClaims, 0, "initial skipped claims");
     assertEqual(firstPoll.errors.length, 0, "initial poll errors");
 
-    await waitForRunCount(baseUrl, 2, 20_000);
+    await waitForRunCount(baseUrl, 3, 20_000);
     const runs = await getJson<RunsResponse>(`${baseUrl}/api/runs`);
-    const githubRun = runs.runs.find((candidate) => candidate.sourceType === "github_issue");
+    const githubRuns = runs.runs.filter((candidate) => candidate.sourceType === "github_issue");
+    const githubRun = githubRuns.find((candidate) => candidate.source?.key === "octo/widgets#42");
+    const secondGithubRun = githubRuns.find((candidate) => candidate.source?.key === "octo/widgets#43");
     const jiraRun = runs.runs.find((candidate) => candidate.sourceType === "jira");
-    assert(githubRun !== undefined, "source pickup should create a GitHub run");
+    assertEqual(githubRuns.length, 2, "source pickup should create one run for each fake GitHub issue");
+    assert(githubRun !== undefined, "source pickup should create the first GitHub run");
+    assert(secondGithubRun !== undefined, "source pickup should create the second GitHub run");
     assertEqual(githubRun.repoKey, "source-gh-e2e", "GitHub run repo key");
     assertEqual(githubRun.source?.key, "octo/widgets#42", "GitHub run source key");
+    assertEqual(secondGithubRun.claimKey, "github:octo/widgets#43", "second GitHub run claim key");
     assert(githubRun.source?.labels.includes("tasksmith") === true, "GitHub source labels should include readiness label");
     assertEqual(githubRun.claimKey, "github:octo/widgets#42", "GitHub run claim key");
     assert(jiraRun !== undefined, "source pickup should create a Jira run");
@@ -134,21 +139,21 @@ async function main(): Promise<void> {
     assertEqual(jiraRun.claimKey, "jira:VOS-42", "Jira run claim key");
 
     const claims = await getJson<ClaimsResponse>(`${baseUrl}/api/source-claims`);
-    assertEqual(claims.claims.length, 2, "claim count");
+    assertEqual(claims.claims.length, 3, "claim count");
     assert(claims.claims.every((claim) => claim.status === "run_created"), "all claims should be run_created");
     assert(claims.claims.some((claim) => claim.runId === githubRun.id), "GitHub claim run id");
     assert(claims.claims.some((claim) => claim.runId === jiraRun.id), "Jira claim run id");
 
     const secondPoll = await postJson<PollResponse>(`${baseUrl}/api/sources/poll`, {});
     assertEqual(secondPoll.createdRuns, 0, "second poll should not duplicate run");
-    assertEqual(secondPoll.skippedExistingClaims, 2, "second poll should skip existing claims");
+    assertEqual(secondPoll.skippedExistingClaims, 3, "second poll should skip existing claims");
 
     const ghLog = await readFile(ghLogPath, "utf8");
     const ghEntries = parseGhLogEntries(ghLog);
     assert(ghLog.includes('"issue","list"'), "gh issue list should be called");
-    const createdComments = ghEntries.filter((entry) => entry.args[0] === "api" && entry.args.includes("POST") && entry.args.includes("/repos/octo/widgets/issues/42/comments"));
+    const createdComments = ghEntries.filter((entry) => entry.args[0] === "api" && entry.args.includes("POST") && /\/repos\/octo\/widgets\/issues\/(42|43)\/comments/.test(entry.args.join(" ")));
     const updatedComments = ghEntries.filter((entry) => entry.args[0] === "api" && entry.args.includes("PATCH"));
-    assertEqual(createdComments.length, 1, "GitHub source status comment should be created once");
+    assertEqual(createdComments.length, 2, "GitHub source status comment should be created once per GitHub issue");
     assert(updatedComments.length >= 1, "GitHub source status updates should reuse the existing comment");
     assert(ghLog.includes("https://tasksmith.example.test/runs/"), "GitHub claim comment should include public run URL");
     assert(ghLog.includes("tasksmith:source-status:github:octo/widgets#42"), "GitHub claim comment should include durable status marker");
@@ -332,10 +337,14 @@ function readComments() {
 function writeComments(comments) { fs.writeFileSync(commentsPath, JSON.stringify(comments)); }
 fs.appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args }) + '\\n');
 if (args[0] === 'issue' && args[1] === 'list') {
-  console.log(JSON.stringify([{ number: 42, title: 'Fix widget sorting', body: 'The widget list should sort newest first.', url: 'https://github.com/octo/widgets/issues/42', labels: [{ name: 'tasksmith' }] }]));
+  console.log(JSON.stringify([
+    { number: 42, title: 'Fix widget sorting', body: 'The widget list should sort newest first.', url: 'https://github.com/octo/widgets/issues/42', labels: [{ name: 'tasksmith' }] },
+    { number: 43, title: 'Fix widget filtering', body: 'The widget list should filter archived items.', url: 'https://github.com/octo/widgets/issues/43', labels: [{ name: 'tasksmith' }] }
+  ]));
   process.exit(0);
 }
-if (args[0] === 'api' && args.includes('/repos/octo/widgets/issues/42/comments') && !args.includes('POST')) {
+const issueCommentsArg = args.find((arg) => arg.endsWith('/comments') && (arg.includes('/repos/octo/widgets/issues/42/') || arg.includes('/repos/octo/widgets/issues/43/')));
+if (args[0] === 'api' && issueCommentsArg && !args.includes('POST')) {
   if (fs.existsSync(failCommentsPath)) {
     console.error('simulated comments lookup failure');
     process.exit(4);
@@ -343,7 +352,7 @@ if (args[0] === 'api' && args.includes('/repos/octo/widgets/issues/42/comments')
   console.log(JSON.stringify(readComments()));
   process.exit(0);
 }
-if (args[0] === 'api' && args.includes('POST') && args.includes('/repos/octo/widgets/issues/42/comments')) {
+if (args[0] === 'api' && args.includes('POST') && issueCommentsArg) {
   const bodyArg = args.find((arg) => arg.startsWith('body=')) || 'body=';
   const comments = readComments();
   const comment = { id: comments.length + 1, body: bodyArg.slice('body='.length) };

@@ -1,5 +1,6 @@
 export type RunStatus =
   | "queued"
+  | "claimed"
   | "preparing"
   | "running"
   | "waiting_for_control"
