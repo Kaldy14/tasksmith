@@ -88,22 +88,38 @@ async function testCapacityAnnotationsPreserveNonCapacityErrors(dataDir: string)
   const active = await store.createRun({ title: "annotation active", repoKey: "annotation-repo", adapter: "demo", prompt: "active" });
   const customError = await store.createRun({ title: "custom error", repoKey: "annotation-repo", adapter: "demo", prompt: "custom" });
   const capacityError = await store.createRun({ title: "capacity error", repoKey: "annotation-repo", adapter: "demo", prompt: "capacity" });
+  const unchangedCapacityError = await store.createRun({ title: "unchanged capacity error", repoKey: "annotation-repo", adapter: "demo", prompt: "unchanged" });
   const emptyError = await store.createRun({ title: "empty error", repoKey: "annotation-repo", adapter: "demo", prompt: "empty" });
 
-  await store.updateRun(customError.id, { error: "Verifier failed before scheduling" });
-  await store.updateRun(capacityError.id, { error: "Queued because run capacity is full: stale repository limit." });
+  const expectedCapacityError = "Queued because run capacity is full: global limit 1 reached.";
+  const customErrorBefore = await store.updateRun(customError.id, { error: "Verifier failed before scheduling" });
+  const capacityErrorBefore = await store.updateRun(capacityError.id, { error: "Queued because run capacity is full: stale repository limit." });
+  const unchangedCapacityErrorBefore = await store.updateRun(unchangedCapacityError.id, { error: expectedCapacityError });
+  const emptyErrorBefore = (await store.getRun(emptyError.id))!;
   assertEqual((await store.claimNextQueuedRun("worker-annotations", 60_000, { maxActiveRuns: 1 }))?.id, active.id, "annotation test should claim active run");
   assertEqual(await store.claimNextQueuedRun("worker-annotations", 60_000, { maxActiveRuns: 1 }), undefined, "remaining runs should wait for capacity");
 
-  const expectedCapacityError = "Queued because run capacity is full: global limit 1 reached.";
-  assertEqual((await store.getRun(customError.id))?.error, "Verifier failed before scheduling", "non-capacity error should be preserved while blocked");
-  assertEqual((await store.getRun(capacityError.id))?.error, expectedCapacityError, "capacity error should update to latest reason");
-  assertEqual((await store.getRun(emptyError.id))?.error, expectedCapacityError, "empty error should receive capacity reason");
+  const customErrorAfter = (await store.getRun(customError.id))!;
+  const capacityErrorAfter = (await store.getRun(capacityError.id))!;
+  const unchangedCapacityErrorAfter = (await store.getRun(unchangedCapacityError.id))!;
+  const emptyErrorAfter = (await store.getRun(emptyError.id))!;
+  assertEqual(customErrorAfter.error, "Verifier failed before scheduling", "non-capacity error should be preserved while blocked");
+  assertEqual(customErrorAfter.updatedAt, customErrorBefore.updatedAt, "non-capacity error should not update timestamps while blocked");
+  assertEqual(capacityErrorAfter.error, expectedCapacityError, "capacity error should update to latest reason");
+  assertGreaterThan(capacityErrorAfter.updatedAt, capacityErrorBefore.updatedAt, "changed capacity error should update timestamps while blocked");
+  assertEqual(unchangedCapacityErrorAfter.error, expectedCapacityError, "unchanged capacity error should keep the same reason while blocked");
+  assertEqual(unchangedCapacityErrorAfter.updatedAt, unchangedCapacityErrorBefore.updatedAt, "unchanged capacity error should not update timestamps while blocked");
+  assertEqual(emptyErrorAfter.error, expectedCapacityError, "empty error should receive capacity reason");
+  assertGreaterThan(emptyErrorAfter.updatedAt, emptyErrorBefore.updatedAt, "empty error should update timestamps while blocked");
   await store.close();
 }
 
 function assertEqual(actual: unknown, expected: unknown, message: string): void {
   if (actual !== expected) throw new Error(`${message}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+}
+
+function assertGreaterThan(actual: string, expected: string, message: string): void {
+  if (actual <= expected) throw new Error(`${message}: expected ${JSON.stringify(actual)} to be greater than ${JSON.stringify(expected)}`);
 }
 
 main().catch((error: unknown) => {

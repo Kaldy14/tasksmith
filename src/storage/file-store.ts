@@ -761,6 +761,7 @@ function isTerminalStatus(status: RunStatus): boolean {
 }
 
 function annotateCapacityBlock(run: RunRecord, capacityReason: string, now: string): RunRecord {
+  if (run.error === capacityReason) return run;
   if (run.error && !run.error.startsWith(CAPACITY_QUEUE_ERROR_PREFIX)) return run;
   return { ...run, error: capacityReason, updatedAt: now };
 }
