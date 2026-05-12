@@ -7,6 +7,8 @@
 
 **Primary next milestone:** restricted-user/container worker isolation, then deepen Jira lifecycle automation and observability.
 
+2026-05-12 dogfood note: GitHub issue pickup is being used to verify the deployed `maxReviewFixAttempts` flow is present on the server.
+
 TaskSmith currently has durable product/architecture docs, ADRs, research references, and implementation briefs. The next work should be a technical spike, not a full app scaffold.
 
 ## Original target flow
