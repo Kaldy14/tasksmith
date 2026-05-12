@@ -173,7 +173,7 @@ export class FileStore {
       }
       if (index === undefined) {
         if (blocked.size === 0) return runs;
-        return runs.map((run, runIndex) => blocked.has(runIndex) ? { ...run, error: blocked.get(runIndex)!, updatedAt: now } : run);
+        return runs.map((run, runIndex) => blocked.has(runIndex) ? annotateCapacityBlock(run, blocked.get(runIndex)!, now) : run);
       }
       const { error, ...candidate } = runs[index]!;
       const nextError = error?.startsWith(CAPACITY_QUEUE_ERROR_PREFIX) ? undefined : error;
@@ -192,7 +192,7 @@ export class FileStore {
       };
       return runs.map((run, runIndex) => {
         if (runIndex === index) return claimed!;
-        return blocked.has(runIndex) ? { ...run, error: blocked.get(runIndex)!, updatedAt: now } : run;
+        return blocked.has(runIndex) ? annotateCapacityBlock(run, blocked.get(runIndex)!, now) : run;
       });
     });
     if (claimed) await this.writeMetadata(claimed);
@@ -758,6 +758,11 @@ function addMs(iso: string, ms: number): string {
 
 function isTerminalStatus(status: RunStatus): boolean {
   return status === "completed" || status === "pr_created" || status === "failed" || status === "cancelled";
+}
+
+function annotateCapacityBlock(run: RunRecord, capacityReason: string, now: string): RunRecord {
+  if (run.error && !run.error.startsWith(CAPACITY_QUEUE_ERROR_PREFIX)) return run;
+  return { ...run, error: capacityReason, updatedAt: now };
 }
 
 function getCapacityBlockReason(runs: RunRecord[], candidate: RunRecord, capacity: RunClaimCapacity): string | undefined {

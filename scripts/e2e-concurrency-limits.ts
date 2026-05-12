@@ -20,6 +20,7 @@ async function main(): Promise<void> {
     await testGlobalLimit(path.join(tempDir, "global"));
     await testPerRepoLimitAndDifferentRepoCapacity(path.join(tempDir, "per-repo"));
     await testCapacityReleaseAfterTerminalStatus(path.join(tempDir, "release"));
+    await testCapacityAnnotationsPreserveNonCapacityErrors(path.join(tempDir, "annotations"));
 
     console.log("Concurrency limits e2e passed");
   } finally {
@@ -77,6 +78,27 @@ async function testCapacityReleaseAfterTerminalStatus(dataDir: string): Promise<
   await store.updateRun(first.id, { status: "failed", finishedAt: new Date().toISOString() });
   const claimedSecond = await store.claimNextQueuedRun("worker-release", 60_000, { maxActiveRuns: 1, maxActiveRunsPerRepo: 1 });
   assertEqual(claimedSecond?.id, second.id, "capacity should release after failure");
+  await store.close();
+}
+
+async function testCapacityAnnotationsPreserveNonCapacityErrors(dataDir: string): Promise<void> {
+  process.env.TASKSMITH_DATA_DIR = dataDir;
+  const store = new FileStore(loadConfig());
+  await store.init();
+  const active = await store.createRun({ title: "annotation active", repoKey: "annotation-repo", adapter: "demo", prompt: "active" });
+  const customError = await store.createRun({ title: "custom error", repoKey: "annotation-repo", adapter: "demo", prompt: "custom" });
+  const capacityError = await store.createRun({ title: "capacity error", repoKey: "annotation-repo", adapter: "demo", prompt: "capacity" });
+  const emptyError = await store.createRun({ title: "empty error", repoKey: "annotation-repo", adapter: "demo", prompt: "empty" });
+
+  await store.updateRun(customError.id, { error: "Verifier failed before scheduling" });
+  await store.updateRun(capacityError.id, { error: "Queued because run capacity is full: stale repository limit." });
+  assertEqual((await store.claimNextQueuedRun("worker-annotations", 60_000, { maxActiveRuns: 1 }))?.id, active.id, "annotation test should claim active run");
+  assertEqual(await store.claimNextQueuedRun("worker-annotations", 60_000, { maxActiveRuns: 1 }), undefined, "remaining runs should wait for capacity");
+
+  const expectedCapacityError = "Queued because run capacity is full: global limit 1 reached.";
+  assertEqual((await store.getRun(customError.id))?.error, "Verifier failed before scheduling", "non-capacity error should be preserved while blocked");
+  assertEqual((await store.getRun(capacityError.id))?.error, expectedCapacityError, "capacity error should update to latest reason");
+  assertEqual((await store.getRun(emptyError.id))?.error, expectedCapacityError, "empty error should receive capacity reason");
   await store.close();
 }
 
