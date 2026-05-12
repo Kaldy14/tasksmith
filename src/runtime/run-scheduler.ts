@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { RunClaimCapacity } from "../domain/types.js";
 import type { FileStore } from "../storage/file-store.js";
 import type { RuntimeManager } from "./runtime-manager.js";
 
@@ -12,6 +13,7 @@ export class RunScheduler {
     private readonly store: FileStore,
     private readonly runtime: RuntimeManager,
     private readonly pollIntervalMs = 1_000,
+    private readonly capacity: RunClaimCapacity = {},
   ) {}
 
   start(): void {
@@ -51,7 +53,7 @@ export class RunScheduler {
     try {
       while (!this.stopped) {
         await this.store.recoverStaleLeases(this.runtime.leaseTimeoutMs);
-        const run = await this.store.claimNextQueuedRun(this.workerId, this.runtime.leaseTimeoutMs);
+        const run = await this.store.claimNextQueuedRun(this.workerId, this.runtime.leaseTimeoutMs, this.capacity);
         if (!run) break;
         try {
           await this.runtime.startRun(run, this.workerId);

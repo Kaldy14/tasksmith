@@ -10,6 +10,7 @@ import type {
   RepositoryConfig,
   SingleTaskWorkflowConfig,
   SourceFlowConfig,
+  QueueLeaseConfig,
   VerificationCommandConfig,
   VerificationConfig,
 } from "../domain/types.js";
@@ -21,6 +22,7 @@ interface ParsedConfigFile {
   repos: Record<string, RepositoryConfig>;
   sourceFlow?: SourceFlowConfig;
   workflow?: SingleTaskWorkflowConfig;
+  queue?: Pick<QueueLeaseConfig, "maxActiveRuns" | "maxActiveRunsPerRepo">;
 }
 
 export interface EditableConfigResponse {
@@ -34,7 +36,7 @@ export function loadConfig(): AppConfig {
   const configFilePath = getConfigFilePath();
   const fileConfig = parseConfigFile(configFilePath);
   const databaseUrl = parseOptionalDatabaseUrl(process.env.TASKSMITH_DATABASE_URL);
-  const queue = parseQueueLeaseConfig();
+  const queue = parseQueueLeaseConfig(fileConfig?.queue);
   return {
     port: parsePort(process.env.PORT ?? "3000"),
     host: process.env.HOST ?? "0.0.0.0",
@@ -55,11 +57,23 @@ export function loadConfig(): AppConfig {
   };
 }
 
-function parseQueueLeaseConfig(): AppConfig["queue"] {
+function parseQueueLeaseConfig(fileQueue?: Pick<QueueLeaseConfig, "maxActiveRuns" | "maxActiveRunsPerRepo">): AppConfig["queue"] {
   const leaseTimeoutMs = parsePositiveInteger(process.env.TASKSMITH_QUEUE_LEASE_TIMEOUT_MS, 120_000, "TASKSMITH_QUEUE_LEASE_TIMEOUT_MS");
   const heartbeatIntervalMs = parsePositiveInteger(process.env.TASKSMITH_QUEUE_HEARTBEAT_INTERVAL_MS, 30_000, "TASKSMITH_QUEUE_HEARTBEAT_INTERVAL_MS");
   if (heartbeatIntervalMs >= leaseTimeoutMs) throw new Error("TASKSMITH_QUEUE_HEARTBEAT_INTERVAL_MS must be less than TASKSMITH_QUEUE_LEASE_TIMEOUT_MS");
-  return { leaseTimeoutMs, heartbeatIntervalMs };
+  const maxActiveRuns = parseOptionalPositiveInteger(process.env.TASKSMITH_QUEUE_MAX_ACTIVE_RUNS, fileQueue?.maxActiveRuns, "TASKSMITH_QUEUE_MAX_ACTIVE_RUNS");
+  const maxActiveRunsPerRepo = parseOptionalPositiveInteger(process.env.TASKSMITH_QUEUE_MAX_ACTIVE_RUNS_PER_REPO, fileQueue?.maxActiveRunsPerRepo, "TASKSMITH_QUEUE_MAX_ACTIVE_RUNS_PER_REPO");
+  return {
+    leaseTimeoutMs,
+    heartbeatIntervalMs,
+    ...(maxActiveRuns === undefined ? {} : { maxActiveRuns }),
+    ...(maxActiveRunsPerRepo === undefined ? {} : { maxActiveRunsPerRepo }),
+  };
+}
+
+function parseOptionalPositiveInteger(raw: string | undefined, fallback: number | undefined, label: string): number | undefined {
+  if (raw === undefined || raw.trim() === "") return fallback;
+  return parsePositiveInteger(raw, 1, label);
 }
 
 function parsePositiveInteger(raw: string | undefined, fallback: number, label: string): number {
@@ -102,11 +116,13 @@ export function parseConfigObject(parsed: unknown): ParsedConfigFile {
   const repos = parseRepositoryConfigs(record.repos);
   const sourceFlow = record.sourceFlow === undefined ? undefined : parseSourceFlow(record.sourceFlow, "sourceFlow");
   const workflow = record.workflow === undefined ? undefined : parseWorkflow(record.workflow, "workflow");
+  const queue = record.queue === undefined ? undefined : parseQueueConfig(record.queue, "queue");
   return {
     repos,
     ...(record.defaultVerify === undefined ? {} : { defaultVerify: parseVerificationCommandArray(record.defaultVerify, "defaultVerify") }),
     ...(sourceFlow === undefined ? {} : { sourceFlow }),
     ...(workflow === undefined ? {} : { workflow }),
+    ...(queue === undefined ? {} : { queue }),
   };
 }
 
@@ -133,6 +149,7 @@ function applyParsedConfig(config: AppConfig, parsed: ParsedConfigFile): void {
   config.sourceFlow = parsed.sourceFlow ?? defaultSourceFlow();
   config.workflow = parsed.workflow ?? defaultWorkflow();
   config.verification.defaultCommands = parseDefaultVerificationCommands(parsed.defaultVerify);
+  config.queue = parseQueueLeaseConfig(parsed.queue);
 }
 
 function configToEditableObject(config: AppConfig): ParsedConfigFile {
@@ -140,8 +157,29 @@ function configToEditableObject(config: AppConfig): ParsedConfigFile {
     sourceFlow: config.sourceFlow,
     workflow: config.workflow,
     defaultVerify: config.verification.defaultCommands,
+    queue: pickEditableQueueConfig(config.queue),
     repos: config.repositories,
   };
+}
+
+function pickEditableQueueConfig(queue: QueueLeaseConfig): Pick<QueueLeaseConfig, "maxActiveRuns" | "maxActiveRunsPerRepo"> {
+  return {
+    ...(queue.maxActiveRuns === undefined ? {} : { maxActiveRuns: queue.maxActiveRuns }),
+    ...(queue.maxActiveRunsPerRepo === undefined ? {} : { maxActiveRunsPerRepo: queue.maxActiveRunsPerRepo }),
+  };
+}
+
+function parseQueueConfig(value: unknown, label: string): Pick<QueueLeaseConfig, "maxActiveRuns" | "maxActiveRunsPerRepo"> {
+  const record = expectRecord(value, label);
+  return {
+    ...(record.maxActiveRuns === undefined ? {} : { maxActiveRuns: parsePositiveIntegerValue(record.maxActiveRuns, `${label}.maxActiveRuns`) }),
+    ...(record.maxActiveRunsPerRepo === undefined ? {} : { maxActiveRunsPerRepo: parsePositiveIntegerValue(record.maxActiveRunsPerRepo, `${label}.maxActiveRunsPerRepo`) }),
+  };
+}
+
+function parsePositiveIntegerValue(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) throw new Error(`${label} must be a positive integer`);
+  return value;
 }
 
 function parseRepositoryConfigs(value: unknown): Record<string, RepositoryConfig> {

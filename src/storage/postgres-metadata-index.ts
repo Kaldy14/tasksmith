@@ -8,6 +8,7 @@ import type {
   NormalizedRunEvent,
   PullRequestRecord,
   ReviewRecord,
+  RunClaimCapacity,
   RunPaths,
   RunRecord,
   RunSourceType,
@@ -43,6 +44,8 @@ type SourceClaimRow = typeof sourceClaims.$inferSelect;
 type PullRequestRow = typeof pullRequests.$inferSelect;
 type ReviewRow = typeof reviews.$inferSelect;
 type RunEventRow = typeof runEvents.$inferSelect;
+
+const CAPACITY_QUEUE_ERROR_PREFIX = "Queued because run capacity is full:";
 
 const migrations: readonly Migration[] = [
   {
@@ -375,17 +378,40 @@ export class PostgresMetadataIndex {
     return rows[0] ? runFromRow(rows[0]) : undefined;
   }
 
-  async claimNextQueuedRun(now: string, workerId: string, leaseTimeoutMs: number): Promise<RunRecord | undefined> {
+  async claimNextQueuedRun(now: string, workerId: string, leaseTimeoutMs: number, capacity: RunClaimCapacity = {}): Promise<RunRecord | undefined> {
     const maxAttempts = 25;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const candidates = await this.db.select().from(runs).where(eq(runs.status, "queued")).orderBy(sql`${runs.createdAt} ASC`).limit(1);
-      const candidate = candidates[0];
-      if (!candidate) return undefined;
-      const claimed = await this.db.update(runs)
-        .set({ status: "claimed", startedAt: now, updatedAt: now, workerId, leaseExpiresAt: addMs(now, leaseTimeoutMs), lastHeartbeatAt: now, leaseAttempt: sql`${runs.leaseAttempt} + 1` })
-        .where(and(eq(runs.id, candidate.id), eq(runs.status, "queued")))
-        .returning();
-      if (claimed[0]) return runFromRow(claimed[0]);
+      const candidates = await this.db.select().from(runs).where(eq(runs.status, "queued")).orderBy(sql`${runs.createdAt} ASC`).limit(maxAttempts);
+      if (candidates.length === 0) return undefined;
+      for (const candidate of candidates) {
+        const capacityReason = await this.getCapacityBlockReason(candidate, capacity);
+        if (capacityReason) {
+          await this.db.update(runs)
+            .set({ error: capacityReason, updatedAt: now })
+            .where(and(eq(runs.id, candidate.id), eq(runs.status, "queued")));
+          continue;
+        }
+        const claimed = await this.db.update(runs)
+          .set({ status: "claimed", startedAt: now, updatedAt: now, workerId, leaseExpiresAt: addMs(now, leaseTimeoutMs), lastHeartbeatAt: now, leaseAttempt: sql`${runs.leaseAttempt} + 1`, error: candidate.error?.startsWith(CAPACITY_QUEUE_ERROR_PREFIX) ? null : candidate.error })
+          .where(and(eq(runs.id, candidate.id), eq(runs.status, "queued")))
+          .returning();
+        if (claimed[0]) return runFromRow(claimed[0]);
+      }
+      return undefined;
+    }
+    return undefined;
+  }
+
+  private async getCapacityBlockReason(candidate: RunRow, capacity: RunClaimCapacity): Promise<string | undefined> {
+    const activeRows = await this.db.select({ repoKey: runs.repoKey }).from(runs).where(and(notInArray(runs.status, ["queued", "completed", "pr_created", "failed", "cancelled"]), sql`${runs.leaseExpiresAt} IS NOT NULL`));
+    if (capacity.maxActiveRuns !== undefined && activeRows.length >= capacity.maxActiveRuns) {
+      return `${CAPACITY_QUEUE_ERROR_PREFIX} global limit ${capacity.maxActiveRuns} reached.`;
+    }
+    if (capacity.maxActiveRunsPerRepo !== undefined) {
+      const activeForRepo = activeRows.filter((row) => row.repoKey === candidate.repoKey).length;
+      if (activeForRepo >= capacity.maxActiveRunsPerRepo) {
+        return `${CAPACITY_QUEUE_ERROR_PREFIX} repository limit ${capacity.maxActiveRunsPerRepo} reached for ${candidate.repoKey}.`;
+      }
     }
     return undefined;
   }

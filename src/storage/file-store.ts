@@ -2,7 +2,7 @@ import { constants as fsConstants } from "node:fs";
 import { access, appendFile, cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import type { AppConfig, CreatePullRequestRecordInput, CreateReviewRecordInput, CreateRunInput, CreateSourceClaimInput, NormalizedRunEvent, PullRequestRecord, ReviewRecord, RunPaths, RunRecord, RunStatus, SourceClaim, StoredRunEvent } from "../domain/types.js";
+import type { AppConfig, CreatePullRequestRecordInput, CreateReviewRecordInput, CreateRunInput, CreateSourceClaimInput, NormalizedRunEvent, PullRequestRecord, ReviewRecord, RunClaimCapacity, RunPaths, RunRecord, RunStatus, SourceClaim, StoredRunEvent } from "../domain/types.js";
 import { redactForStorage } from "../domain/redaction.js";
 import { PostgresMetadataIndex } from "./postgres-metadata-index.js";
 
@@ -30,6 +30,8 @@ interface ReviewsStateFile {
   version: 1;
   reviews: ReviewRecord[];
 }
+
+const CAPACITY_QUEUE_ERROR_PREFIX = "Queued because run capacity is full:";
 
 export class FileStore {
   private readonly runsStatePath: string;
@@ -145,22 +147,39 @@ export class FileStore {
     return [...state.runs].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }
 
-  async claimNextQueuedRun(workerId: string, leaseTimeoutMs: number): Promise<RunRecord | undefined> {
+  async claimNextQueuedRun(workerId: string, leaseTimeoutMs: number, capacity: RunClaimCapacity = {}): Promise<RunRecord | undefined> {
     if (this.metadataIndex) {
-      const claimed = await this.metadataIndex.claimNextQueuedRun(this.now(), workerId, leaseTimeoutMs);
+      const claimed = await this.metadataIndex.claimNextQueuedRun(this.now(), workerId, leaseTimeoutMs, capacity);
       if (claimed) await this.writeMetadata(claimed);
       return claimed;
     }
     let claimed: RunRecord | undefined;
     await this.mutateRuns((runs) => {
-      const index = runs
+      const queued = runs
         .map((run, runIndex) => ({ run, runIndex }))
         .filter(({ run }) => run.status === "queued")
-        .sort((left, right) => left.run.createdAt.localeCompare(right.run.createdAt))[0]?.runIndex;
-      if (index === undefined) return runs;
+        .sort((left, right) => left.run.createdAt.localeCompare(right.run.createdAt));
       const now = this.now();
+      const blocked = new Map<number, string>();
+      let index: number | undefined;
+      for (const item of queued) {
+        const capacityReason = getCapacityBlockReason(runs, item.run, capacity);
+        if (capacityReason) {
+          blocked.set(item.runIndex, capacityReason);
+          continue;
+        }
+        index = item.runIndex;
+        break;
+      }
+      if (index === undefined) {
+        if (blocked.size === 0) return runs;
+        return runs.map((run, runIndex) => blocked.has(runIndex) ? { ...run, error: blocked.get(runIndex)!, updatedAt: now } : run);
+      }
+      const { error, ...candidate } = runs[index]!;
+      const nextError = error?.startsWith(CAPACITY_QUEUE_ERROR_PREFIX) ? undefined : error;
       claimed = {
-        ...runs[index]!,
+        ...candidate,
+        ...(nextError === undefined ? {} : { error: nextError }),
         status: "claimed",
         startedAt: now,
         updatedAt: now,
@@ -171,7 +190,10 @@ export class FileStore {
           attempt: (runs[index]!.lease?.attempt ?? 0) + 1,
         },
       };
-      return runs.map((run, runIndex) => runIndex === index ? claimed! : run);
+      return runs.map((run, runIndex) => {
+        if (runIndex === index) return claimed!;
+        return blocked.has(runIndex) ? { ...run, error: blocked.get(runIndex)!, updatedAt: now } : run;
+      });
     });
     if (claimed) await this.writeMetadata(claimed);
     return claimed;
@@ -736,6 +758,20 @@ function addMs(iso: string, ms: number): string {
 
 function isTerminalStatus(status: RunStatus): boolean {
   return status === "completed" || status === "pr_created" || status === "failed" || status === "cancelled";
+}
+
+function getCapacityBlockReason(runs: RunRecord[], candidate: RunRecord, capacity: RunClaimCapacity): string | undefined {
+  const activeRuns = runs.filter((run) => run.status !== "queued" && !isTerminalStatus(run.status) && !!run.lease);
+  if (capacity.maxActiveRuns !== undefined && activeRuns.length >= capacity.maxActiveRuns) {
+    return `${CAPACITY_QUEUE_ERROR_PREFIX} global limit ${capacity.maxActiveRuns} reached.`;
+  }
+  if (capacity.maxActiveRunsPerRepo !== undefined) {
+    const activeForRepo = activeRuns.filter((run) => run.repoKey === candidate.repoKey).length;
+    if (activeForRepo >= capacity.maxActiveRunsPerRepo) {
+      return `${CAPACITY_QUEUE_ERROR_PREFIX} repository limit ${capacity.maxActiveRunsPerRepo} reached for ${candidate.repoKey}.`;
+    }
+  }
+  return undefined;
 }
 
 function normalizeRunLeaseShape(run: RunRecord & { workerId?: string; leaseExpiresAt?: string; lastHeartbeatAt?: string; leaseAttempt?: number }): RunRecord {

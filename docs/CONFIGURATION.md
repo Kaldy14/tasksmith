@@ -83,6 +83,24 @@ TASKSMITH_QUEUE_HEARTBEAT_INTERVAL_MS=30000
 
 A Run with an unexpired lease is not claimed by another worker. On boot and each scheduler tick, expired leases are recovered deterministically: `claimed` and `preparing` Runs are requeued because no non-resumable runtime phase should have started; `running`, `fixing`, `verifying`, `reviewing`, `delivering`, `creating_pr`, and `watching_ci` are failed because TaskSmith does not yet support safe Pi/session resume for those phases. Recovery writes a Run status event with the stale-lease outcome for operators.
 
+By default, queued Runs have no global or per-repository concurrency cap. Set optional limits in the JSON config or with environment variables:
+
+```json
+{
+  "queue": {
+    "maxActiveRuns": 2,
+    "maxActiveRunsPerRepo": 1
+  }
+}
+```
+
+```bash
+TASKSMITH_QUEUE_MAX_ACTIVE_RUNS=2
+TASKSMITH_QUEUE_MAX_ACTIVE_RUNS_PER_REPO=1
+```
+
+The scheduler counts non-terminal, non-queued Runs that still hold a lease. If capacity is full, eligible Runs stay `queued` and their Run error text notes the capacity limit until they can be claimed.
+
 ## Workspace initialization commands
 
 Each repository can define commands that run after the checkout is prepared and before Pi/demo implementation starts:

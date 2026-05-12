@@ -243,7 +243,12 @@ export interface VerificationConfig {
   defaultCommands: VerificationCommandConfig[];
 }
 
-export interface QueueLeaseConfig {
+export interface RunClaimCapacity {
+  maxActiveRuns?: number;
+  maxActiveRunsPerRepo?: number;
+}
+
+export interface QueueLeaseConfig extends RunClaimCapacity {
   leaseTimeoutMs: number;
   heartbeatIntervalMs: number;
 }

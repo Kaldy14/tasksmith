@@ -8,6 +8,10 @@
       "labels": {}
     }
   },
+  "queue": {
+    "maxActiveRuns": 2,
+    "maxActiveRunsPerRepo": 1
+  },
   "workflow": {
     "type": "single_task_sandcastle",
     "stages": [

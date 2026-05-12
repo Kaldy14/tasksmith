@@ -23,7 +23,10 @@ const reviewer = new FreshContextReviewer();
 const delivery = new PullRequestDelivery(config, store);
 const ciWatcher = new GitHubCiWatcher(config.repositories, config.workflow);
 const runtime = new RuntimeManager(store, hub, verifier, reviewer, delivery, ciWatcher, config.repositories, config.workflow, config.publicBaseUrl, config.queue.leaseTimeoutMs, config.queue.heartbeatIntervalMs);
-const scheduler = new RunScheduler(store, runtime);
+const scheduler = new RunScheduler(store, runtime, 1_000, {
+  ...(config.queue.maxActiveRuns === undefined ? {} : { maxActiveRuns: config.queue.maxActiveRuns }),
+  ...(config.queue.maxActiveRunsPerRepo === undefined ? {} : { maxActiveRunsPerRepo: config.queue.maxActiveRunsPerRepo }),
+});
 scheduler.start();
 const sourcePoller = new SourcePoller(config, store);
 if (process.env.TASKSMITH_SOURCE_POLLING === "1" || process.env.TASKSMITH_SOURCE_POLLING === "true") {
