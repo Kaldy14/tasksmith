@@ -1,5 +1,5 @@
 import { constants as fsConstants } from "node:fs";
-import { access, appendFile, cp, mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
+import { access, appendFile, cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { AppConfig, CreatePullRequestRecordInput, CreateReviewRecordInput, CreateRunInput, CreateSourceClaimInput, NormalizedRunEvent, PullRequestRecord, ReviewRecord, RunPaths, RunRecord, RunStatus, SourceClaim, StoredRunEvent } from "../domain/types.js";
@@ -29,6 +29,7 @@ interface ReviewsStateFile {
 export class FileStore {
   private readonly runsStatePath: string;
   private readonly claimsStatePath: string;
+  private readonly claimsLockPath: string;
   private readonly pullRequestsStatePath: string;
   private readonly reviewsStatePath: string;
   private readonly writeQueues = new Map<string, Promise<void>>();
@@ -38,6 +39,7 @@ export class FileStore {
   constructor(private readonly config: AppConfig) {
     this.runsStatePath = path.join(config.stateDir, "runs.json");
     this.claimsStatePath = path.join(config.stateDir, "source-claims.json");
+    this.claimsLockPath = path.join(config.stateDir, "source-claims.lock");
     this.pullRequestsStatePath = path.join(config.stateDir, "pull-requests.json");
     this.reviewsStatePath = path.join(config.stateDir, "reviews.json");
     this.metadataIndex = config.databaseUrl ? new PostgresMetadataIndex(config.databaseUrl) : undefined;
@@ -144,7 +146,7 @@ export class FileStore {
 
   async tryCreateSourceClaim(input: CreateSourceClaimInput): Promise<{ claim: SourceClaim; created: boolean }> {
     if (this.metadataIndex) return this.metadataIndex.tryCreateSourceClaim(input, this.now());
-    return this.enqueue("__claims__", async () => {
+    return this.enqueue("__claims__", () => this.withClaimsLock(async () => {
       const state = await this.readClaimsState();
       const existing = state.claims.find((claim) => claim.key === input.key);
       if (existing) return { claim: existing, created: false };
@@ -162,13 +164,13 @@ export class FileStore {
       };
       await this.writeClaimsState({ version: 1, claims: [claim, ...state.claims] });
       return { claim, created: true };
-    });
+    }));
   }
 
   async updateSourceClaim(claimKey: string, patch: Partial<Omit<SourceClaim, "key" | "createdAt">>): Promise<SourceClaim> {
     if (this.metadataIndex) return this.metadataIndex.updateSourceClaim(claimKey, patch, this.now());
     let updated: SourceClaim | undefined;
-    await this.enqueue("__claims__", async () => {
+    await this.enqueue("__claims__", () => this.withClaimsLock(async () => {
       const state = await this.readClaimsState();
       const claims = state.claims.map((claim) => {
         if (claim.key !== claimKey) return claim;
@@ -176,7 +178,7 @@ export class FileStore {
         return updated;
       });
       await this.writeClaimsState({ version: 1, claims });
-    });
+    }));
     if (!updated) throw new Error(`Source claim not found: ${claimKey}`);
     return updated;
   }
@@ -465,28 +467,28 @@ export class FileStore {
 
   private async writeRunsState(state: RunsStateFile): Promise<void> {
     await mkdir(path.dirname(this.runsStatePath), { recursive: true });
-    const tmp = `${this.runsStatePath}.tmp`;
+    const tmp = `${this.runsStatePath}.${process.pid}.${randomUUID()}.tmp`;
     await writeFile(tmp, `${JSON.stringify(state, null, 2)}\n`, "utf8");
     await rename(tmp, this.runsStatePath);
   }
 
   private async writeClaimsState(state: ClaimsStateFile): Promise<void> {
     await mkdir(path.dirname(this.claimsStatePath), { recursive: true });
-    const tmp = `${this.claimsStatePath}.tmp`;
+    const tmp = `${this.claimsStatePath}.${process.pid}.${randomUUID()}.tmp`;
     await writeFile(tmp, `${JSON.stringify(state, null, 2)}\n`, "utf8");
     await rename(tmp, this.claimsStatePath);
   }
 
   private async writePullRequestsState(state: PullRequestsStateFile): Promise<void> {
     await mkdir(path.dirname(this.pullRequestsStatePath), { recursive: true });
-    const tmp = `${this.pullRequestsStatePath}.tmp`;
+    const tmp = `${this.pullRequestsStatePath}.${process.pid}.${randomUUID()}.tmp`;
     await writeFile(tmp, `${JSON.stringify(state, null, 2)}\n`, "utf8");
     await rename(tmp, this.pullRequestsStatePath);
   }
 
   private async writeReviewsState(state: ReviewsStateFile): Promise<void> {
     await mkdir(path.dirname(this.reviewsStatePath), { recursive: true });
-    const tmp = `${this.reviewsStatePath}.tmp`;
+    const tmp = `${this.reviewsStatePath}.${process.pid}.${randomUUID()}.tmp`;
     await writeFile(tmp, `${JSON.stringify(state, null, 2)}\n`, "utf8");
     await rename(tmp, this.reviewsStatePath);
   }
@@ -496,6 +498,27 @@ export class FileStore {
       const state = await this.readRunsState();
       await this.writeRunsState({ version: 1, runs: mutator(state.runs) });
     });
+  }
+
+  private async withClaimsLock<T>(operation: () => Promise<T>): Promise<T> {
+    const deadline = Date.now() + 30_000;
+    while (true) {
+      try {
+        await mkdir(this.claimsLockPath);
+        break;
+      } catch (error: unknown) {
+        const code = error instanceof Error && "code" in error ? (error as NodeJS.ErrnoException).code : undefined;
+        if (code !== "EEXIST") throw error;
+        if (Date.now() > deadline) throw new Error(`Timed out waiting for source claim lock: ${this.claimsLockPath}`);
+        await sleep(50);
+      }
+    }
+
+    try {
+      return await operation();
+    } finally {
+      await rm(this.claimsLockPath, { recursive: true, force: true });
+    }
   }
 
   private async writeMetadata(run: RunRecord): Promise<void> {
@@ -617,6 +640,10 @@ async function maybeCopyFile(source: string, target: string, copied: string[]): 
   await mkdir(path.dirname(target), { recursive: true });
   await cp(source, target, { force: true, mode: fsConstants.COPYFILE_FICLONE });
   copied.push(path.basename(source));
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function exists(filePath: string): Promise<boolean> {

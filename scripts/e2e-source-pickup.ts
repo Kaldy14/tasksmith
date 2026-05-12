@@ -6,6 +6,8 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises
 import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { FileStore } from "../src/storage/file-store.js";
+import type { AppConfig } from "../src/domain/types.js";
 
 interface PollResponse {
   checkedRepositories: number;
@@ -27,6 +29,8 @@ const tsxBin = path.join(rootDir, "node_modules", ".bin", process.platform === "
 const serverScript = path.join(rootDir, "src", "server", "index.ts");
 
 async function main(): Promise<void> {
+  await verifyConcurrentFileClaims();
+
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "tasksmith-source-pickup-e2e-"));
   const binDir = path.join(tempDir, "bin");
   const ghLogPath = path.join(tempDir, "gh-calls.jsonl");
@@ -54,6 +58,7 @@ async function main(): Promise<void> {
       TASKSMITH_JIRA_EMAIL: "agent@example.test",
       TASKSMITH_JIRA_API_TOKEN: "fake-token",
       TASKSMITH_SOURCE_POLLING: "0",
+      TASKSMITH_AUTH_ENABLED: "0",
       PORT: String(port),
       HOST: "127.0.0.1",
     },
@@ -120,6 +125,58 @@ async function main(): Promise<void> {
       await rm(tempDir, { recursive: true, force: true });
     }
   }
+}
+
+async function verifyConcurrentFileClaims(): Promise<void> {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "tasksmith-source-claim-race-"));
+  try {
+    const config = buildFileStoreConfig(tempDir);
+    const bootstrap = new FileStore(config);
+    await bootstrap.init();
+
+    const stores = Array.from({ length: 8 }, () => new FileStore(config));
+    const attempts = await Promise.all(stores.map((store) => store.tryCreateSourceClaim({
+      key: "github:octo/widgets#4242",
+      provider: "github",
+      sourceType: "github_issue",
+      sourceKey: "octo/widgets#4242",
+      sourceUrl: "https://github.com/octo/widgets/issues/4242",
+      repoKey: "source-gh-e2e",
+    })));
+
+    assertEqual(attempts.filter((attempt) => attempt.created).length, 1, "concurrent file-backed source claim creation should create exactly one claim");
+    const claims = await bootstrap.listSourceClaims();
+    assertEqual(claims.length, 1, "concurrent file-backed source claim state should contain exactly one claim");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+function buildFileStoreConfig(tempDir: string): AppConfig {
+  return {
+    port: 0,
+    host: "127.0.0.1",
+    dataDir: tempDir,
+    runsDir: path.join(tempDir, "runs"),
+    stateDir: path.join(tempDir, "state"),
+    piAuthSourceDir: path.join(tempDir, "pi-auth"),
+    publicDir: path.join(tempDir, "public"),
+    publicBaseUrl: "https://tasksmith.example.test",
+    auth: { enabled: false, baseUrl: "https://tasksmith.example.test", trustedOrigins: [] },
+    repositories: {},
+    sourceFlow: { readinessLabel: "tasksmith", pollIntervalSeconds: 60, jiraRepoRouting: { strategy: "label", labels: {} } },
+    workflow: {
+      type: "single_task_sandcastle",
+      stages: ["plan", "implement", "deep_review", "fix", "deliver"],
+      maxFixAttempts: 0,
+      maxCiFixAttempts: 0,
+      maxReviewFixAttempts: 0,
+      ciPollIntervalMs: 1000,
+      ciTimeoutMs: 1000,
+      deliveryMode: "ready_pr",
+    },
+    verification: { defaultCommands: [] },
+  } as AppConfig;
 }
 
 function buildConfig(): unknown {

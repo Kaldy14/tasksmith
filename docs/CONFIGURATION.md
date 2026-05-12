@@ -107,6 +107,8 @@ Current intended repos:
 
 Because GitHub Issues are already scoped to a repository, no extra repo-routing label is needed. The source poller queries each configured repo for open issues with label `tasksmith`, creates exactly one claim/run per issue, and comments back with the TaskSmith Run link.
 
+Source pickup idempotency depends on the source-claim store. Postgres deployments use the `tasksmith_source_claims` primary key. File-backed deployments also take a short filesystem lock around `source-claims.json` updates so repeated polls, restarts, or overlapping app processes cannot each believe they created the same claim and post duplicate pickup comments.
+
 Manual source poll endpoint:
 
 ```bash
