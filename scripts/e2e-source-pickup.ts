@@ -134,6 +134,19 @@ async function verifyConcurrentFileClaims(): Promise<void> {
     const bootstrap = new FileStore(config);
     await bootstrap.init();
 
+    const staleLockPath = path.join(tempDir, "state", "source-claims.lock");
+    await mkdir(staleLockPath);
+    await writeFile(path.join(staleLockPath, "owner.json"), `${JSON.stringify({ pid: findNonexistentPid(), createdAt: new Date().toISOString() })}\n`, "utf8");
+    const recovered = await bootstrap.tryCreateSourceClaim({
+      key: "github:octo/widgets#4241",
+      provider: "github",
+      sourceType: "github_issue",
+      sourceKey: "octo/widgets#4241",
+      sourceUrl: "https://github.com/octo/widgets/issues/4241",
+      repoKey: "source-gh-e2e",
+    });
+    assert(recovered.created, "stale file-backed source claim lock should be removed and retried");
+
     const stores = Array.from({ length: 8 }, () => new FileStore(config));
     const attempts = await Promise.all(stores.map((store) => store.tryCreateSourceClaim({
       key: "github:octo/widgets#4242",
@@ -146,9 +159,26 @@ async function verifyConcurrentFileClaims(): Promise<void> {
 
     assertEqual(attempts.filter((attempt) => attempt.created).length, 1, "concurrent file-backed source claim creation should create exactly one claim");
     const claims = await bootstrap.listSourceClaims();
-    assertEqual(claims.length, 1, "concurrent file-backed source claim state should contain exactly one claim");
+    assertEqual(claims.length, 2, "file-backed source claim state should contain the recovered and concurrent claims");
   } finally {
     await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+function findNonexistentPid(): number {
+  for (let pid = process.pid + 10_000; pid < process.pid + 20_000; pid += 1) {
+    if (!isProcessRunning(pid)) return pid;
+  }
+  throw new Error("Could not find a nonexistent pid for stale lock coverage");
+}
+
+function isProcessRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error: unknown) {
+    const code = error instanceof Error && "code" in error ? (error as NodeJS.ErrnoException).code : undefined;
+    return code !== "ESRCH";
   }
 }
 

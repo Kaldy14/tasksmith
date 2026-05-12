@@ -16,6 +16,11 @@ interface ClaimsStateFile {
   claims: SourceClaim[];
 }
 
+interface ClaimsLockOwner {
+  pid: number;
+  createdAt: string;
+}
+
 interface PullRequestsStateFile {
   version: 1;
   pullRequests: PullRequestRecord[];
@@ -30,6 +35,7 @@ export class FileStore {
   private readonly runsStatePath: string;
   private readonly claimsStatePath: string;
   private readonly claimsLockPath: string;
+  private readonly claimsLockOwnerPath: string;
   private readonly pullRequestsStatePath: string;
   private readonly reviewsStatePath: string;
   private readonly writeQueues = new Map<string, Promise<void>>();
@@ -40,6 +46,7 @@ export class FileStore {
     this.runsStatePath = path.join(config.stateDir, "runs.json");
     this.claimsStatePath = path.join(config.stateDir, "source-claims.json");
     this.claimsLockPath = path.join(config.stateDir, "source-claims.lock");
+    this.claimsLockOwnerPath = path.join(this.claimsLockPath, "owner.json");
     this.pullRequestsStatePath = path.join(config.stateDir, "pull-requests.json");
     this.reviewsStatePath = path.join(config.stateDir, "reviews.json");
     this.metadataIndex = config.databaseUrl ? new PostgresMetadataIndex(config.databaseUrl) : undefined;
@@ -505,10 +512,17 @@ export class FileStore {
     while (true) {
       try {
         await mkdir(this.claimsLockPath);
+        try {
+          await writeFile(this.claimsLockOwnerPath, `${JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() } satisfies ClaimsLockOwner)}\n`, "utf8");
+        } catch (error: unknown) {
+          await rm(this.claimsLockPath, { recursive: true, force: true });
+          throw error;
+        }
         break;
       } catch (error: unknown) {
         const code = error instanceof Error && "code" in error ? (error as NodeJS.ErrnoException).code : undefined;
         if (code !== "EEXIST") throw error;
+        if (await this.removeStaleClaimsLock()) continue;
         if (Date.now() > deadline) throw new Error(`Timed out waiting for source claim lock: ${this.claimsLockPath}`);
         await sleep(50);
       }
@@ -518,6 +532,28 @@ export class FileStore {
       return await operation();
     } finally {
       await rm(this.claimsLockPath, { recursive: true, force: true });
+    }
+  }
+
+  private async removeStaleClaimsLock(): Promise<boolean> {
+    const owner = await this.readClaimsLockOwner();
+    if (!owner || isProcessRunning(owner.pid)) return false;
+    const currentOwner = await this.readClaimsLockOwner();
+    if (currentOwner && (currentOwner.pid !== owner.pid || isProcessRunning(currentOwner.pid))) return false;
+    await rm(this.claimsLockPath, { recursive: true, force: true });
+    return true;
+  }
+
+  private async readClaimsLockOwner(): Promise<ClaimsLockOwner | undefined> {
+    try {
+      const parsed: unknown = JSON.parse(await readFile(this.claimsLockOwnerPath, "utf8"));
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
+      const record = parsed as Record<string, unknown>;
+      if (typeof record.pid !== "number" || !Number.isInteger(record.pid)) return undefined;
+      if (typeof record.createdAt !== "string") return undefined;
+      return { pid: record.pid, createdAt: record.createdAt };
+    } catch {
+      return undefined;
     }
   }
 
@@ -628,6 +664,17 @@ function controlKind(value: unknown): string {
 function toRecord(value: unknown): Record<string, unknown> {
   if (typeof value === "object" && value !== null && !Array.isArray(value)) return value as Record<string, unknown>;
   return { value };
+}
+
+function isProcessRunning(pid: number): boolean {
+  if (pid <= 0) return true;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error: unknown) {
+    const code = error instanceof Error && "code" in error ? (error as NodeJS.ErrnoException).code : undefined;
+    return code !== "ESRCH";
+  }
 }
 
 async function appendJsonl(file: string, value: unknown): Promise<void> {
