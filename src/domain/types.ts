@@ -228,11 +228,17 @@ export interface SingleTaskWorkflowConfig {
   mergeTargetBranch?: string;
 }
 
+export interface RepositoryCheckoutConfig {
+  mode: "clone" | "worktree";
+  cacheDir?: string;
+}
+
 export interface RepositoryConfig {
   displayName?: string;
   gitUrl?: string;
   defaultBranch?: string;
   cloneDepth?: number;
+  checkout?: RepositoryCheckoutConfig;
   gitSshCommand?: string;
   gitProvider?: GitHubProviderConfig;
   issueProvider?: IssueProviderConfig;

@@ -53,7 +53,13 @@ Minimal shape:
 }
 ```
 
-Configured repositories appear in the manual intake UI. When a Run uses a configured repository with `gitUrl`, TaskSmith clones it into the per-run workspace before starting Pi or the demo runtime. It is currently a fresh per-run checkout, not a shared `git worktree` from a local cache; that keeps isolation simple while preserving the same workspace semantics. Source-created Runs default to `runtimeAdapter: "pi"`; tests and local demos may set `runtimeAdapter: "demo"` on a repository.
+Configured repositories appear in the manual intake UI. When a Run uses a configured repository with `gitUrl`, TaskSmith clones it into the per-run workspace before starting Pi or the demo runtime. Fresh clone remains the default. Repositories that run frequently can opt into a local cache:
+
+```json
+{ "checkout": { "mode": "worktree" } }
+```
+
+TaskSmith stores the cache under its data directory (`repos/<repoKey>`) unless `checkout.cacheDir` is explicitly set, fetches/prunes the default branch, and creates each Run as a distinct `git worktree`. Source-created Runs default to `runtimeAdapter: "pi"`; tests and local demos may set `runtimeAdapter: "demo"` on a repository.
 
 ## Project config UI
 
@@ -118,7 +124,7 @@ Each repository can define commands that run after the checkout is prepared and 
 }
 ```
 
-Init commands run outside the agent in the per-run workspace with `HOME` set to the per-run home directory. They are deterministic setup, not prompt-controlled implementation. TaskSmith adds `.env`, `.env.*`, `node_modules/`, and `.pnpm-store/` to `.git/info/exclude` for cloned workspaces before init commands run, reducing accidental PR leakage of local setup files. Keep init commands idempotent and avoid changing tracked files unless those changes are intended for the final PR.
+Init commands run outside the agent in the per-run workspace with `HOME` set to the per-run home directory. They are deterministic setup, not prompt-controlled implementation. TaskSmith adds `.env`, `.env.*`, `node_modules/`, and `.pnpm-store/` to the per-run git exclude file for cloned and worktree-backed workspaces before init commands run, reducing accidental PR leakage of local setup files. Keep safe local setup here (for example copying example env files, installing dependencies, or preparing test data), make commands idempotent, and avoid changing tracked files unless those changes are intended for the final PR.
 
 ## GitHub Issues source example
 

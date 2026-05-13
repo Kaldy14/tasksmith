@@ -213,6 +213,7 @@ function parseRepositoryConfig(value: unknown, label: string): RepositoryConfig 
   assignOptionalString(config, "defaultBranch", record.defaultBranch, `${label}.defaultBranch`, 160);
   assignOptionalString(config, "gitSshCommand", record.gitSshCommand, `${label}.gitSshCommand`, 2_000);
   if (record.cloneDepth !== undefined) config.cloneDepth = parseCloneDepth(record.cloneDepth, `${label}.cloneDepth`);
+  if (record.checkout !== undefined) config.checkout = parseRepositoryCheckout(record.checkout, `${label}.checkout`);
   if (record.gitProvider !== undefined) config.gitProvider = parseGitProvider(record.gitProvider, `${label}.gitProvider`);
   if (record.issueProvider !== undefined) config.issueProvider = parseIssueProvider(record.issueProvider, `${label}.issueProvider`);
   if (record.runtimeAdapter !== undefined) config.runtimeAdapter = parseRuntimeAdapter(record.runtimeAdapter, `${label}.runtimeAdapter`);
@@ -221,6 +222,17 @@ function parseRepositoryConfig(value: unknown, label: string): RepositoryConfig 
   if (record.workflow !== undefined) config.workflow = parseWorkflow(record.workflow, `${label}.workflow`);
   if (record.codeRabbit !== undefined) config.codeRabbit = parseCodeRabbitConfig(record.codeRabbit, `${label}.codeRabbit`);
   return config;
+}
+
+function parseRepositoryCheckout(value: unknown, label: string): NonNullable<RepositoryConfig["checkout"]> {
+  const record = expectRecord(value, label);
+  const mode = record.mode === undefined ? "clone" : parseRequiredString(record.mode, `${label}.mode`, 40);
+  if (mode !== "clone" && mode !== "worktree") throw new Error(`${label}.mode must be 'clone' or 'worktree'`);
+  const modeLit: "clone" | "worktree" = mode === "clone" ? "clone" : "worktree";
+  return {
+    mode: modeLit,
+    ...(record.cacheDir === undefined ? {} : { cacheDir: path.resolve(parseRequiredString(record.cacheDir, `${label}.cacheDir`, 2_000)) }),
+  };
 }
 
 function parseSourceFlow(value: unknown, label: string): SourceFlowConfig {

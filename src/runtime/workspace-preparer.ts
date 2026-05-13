@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
-import { appendFile, mkdir, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import type { NormalizedRunEvent, RepositoryConfig, RunPaths, RunRecord, VerificationCommandConfig } from "../domain/types.js";
 import { redactForStorage } from "../domain/redaction.js";
 
@@ -28,7 +29,11 @@ export class WorkspacePreparer {
       return;
     }
 
-    await this.prepareGitWorkspace(run, paths, repo, repo.gitUrl, emit);
+    if (repo.checkout?.mode === "worktree") {
+      await this.prepareWorktreeWorkspace(run, paths, repo, repo.gitUrl, emit);
+    } else {
+      await this.prepareGitWorkspace(run, paths, repo, repo.gitUrl, emit);
+    }
     await this.runInitCommands(run, paths, repo, emit);
   }
 
@@ -68,6 +73,36 @@ export class WorkspacePreparer {
     if (result.exitCode !== 0) {
       throw new Error(`git clone failed for ${run.repoKey}: ${summarizeFailure(result)}`);
     }
+    await excludeLocalSetupFiles(paths);
+  }
+
+  private async prepareWorktreeWorkspace(
+    run: RunRecord,
+    paths: RunPaths,
+    repo: RepositoryConfig,
+    gitUrl: string,
+    emit: WorkspaceEmitter,
+  ): Promise<void> {
+    await rm(paths.workspaceDir, { recursive: true, force: true });
+    await mkdir(path.dirname(paths.workspaceDir), { recursive: true });
+
+    const cacheDir = repo.checkout?.cacheDir ?? defaultRepoCacheDir(paths, run.repoKey);
+    await ensureWorktreeCache(run, paths, repo, gitUrl, cacheDir, emit);
+
+    const fetchRef = repo.defaultBranch ? `+refs/heads/${repo.defaultBranch}:refs/remotes/origin/${repo.defaultBranch}` : undefined;
+    const fetchArgs = ["fetch", "--prune", "origin", ...(fetchRef ? [fetchRef] : [])];
+    await emit({ type: "command", command: `git fetch --prune origin${repo.defaultBranch ? ` ${repo.defaultBranch}` : ""}` });
+    const fetchResult = await runCommand("git", fetchArgs, cacheDir, gitEnv(repo));
+    await emit({ type: "command_output", command: "git fetch", output: formatCloneOutput(fetchResult), isError: fetchResult.exitCode !== 0 });
+    if (fetchResult.exitCode !== 0) throw new Error(`git fetch failed for ${run.repoKey}: ${summarizeFailure(fetchResult)}`);
+
+    await runCommand("git", ["worktree", "prune"], cacheDir, gitEnv(repo));
+    const ref = repo.defaultBranch ? `refs/remotes/origin/${repo.defaultBranch}` : "HEAD";
+    await emit({ type: "command", command: `git worktree add <workspace> ${repo.defaultBranch ?? "HEAD"}` });
+    const addResult = await runCommand("git", ["worktree", "add", "--detach", paths.workspaceDir, ref], cacheDir, gitEnv(repo));
+    await emit({ type: "command_output", command: "git worktree add", output: formatCloneOutput(addResult), isError: addResult.exitCode !== 0 });
+    if (addResult.exitCode !== 0) throw new Error(`git worktree add failed for ${run.repoKey}: ${summarizeFailure(addResult)}`);
+
     await excludeLocalSetupFiles(paths);
   }
 
@@ -197,12 +232,85 @@ function summarizeFailure(result: CommandResult): string {
   return `${redactForStorage(text).split("\n").slice(0, 3).join(" ")}${suffix}`;
 }
 
+async function ensureWorktreeCache(
+  run: RunRecord,
+  paths: RunPaths,
+  repo: RepositoryConfig,
+  gitUrl: string,
+  cacheDir: string,
+  emit: WorkspaceEmitter,
+): Promise<void> {
+  await mkdir(path.dirname(cacheDir), { recursive: true });
+  const releaseLock = await acquireCacheLock(cacheDir);
+  try {
+    if (await pathExists(path.join(cacheDir, "HEAD"))) return;
+    await rm(cacheDir, { recursive: true, force: true });
+    const branchArgs = repo.defaultBranch ? ["--branch", repo.defaultBranch] : [];
+    const depthArgs = repo.cloneDepth === 0 ? [] : ["--depth", String(repo.cloneDepth ?? 1)];
+    await emit({ type: "command", command: `git clone --bare ${repo.defaultBranch ? `--branch ${repo.defaultBranch} ` : ""}<configured ${run.repoKey}> <cache>` });
+    const result = await runCommand("git", ["clone", "--bare", ...depthArgs, ...branchArgs, "--", gitUrl, cacheDir], paths.runDir, gitEnv(repo));
+    await emit({ type: "command_output", command: "git clone --bare", output: formatCloneOutput(result), isError: result.exitCode !== 0 });
+    if (result.exitCode !== 0) throw new Error(`git cache clone failed for ${run.repoKey}: ${summarizeFailure(result)}`);
+  } finally {
+    await releaseLock();
+  }
+}
+
+async function acquireCacheLock(cacheDir: string): Promise<() => Promise<void>> {
+  const lockDir = `${cacheDir}.lock`;
+  const deadline = Date.now() + 120_000;
+  while (true) {
+    try {
+      await mkdir(lockDir);
+      return async () => {
+        await rm(lockDir, { recursive: true, force: true });
+      };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if (Date.now() > deadline) throw new Error(`timed out waiting for git cache lock: ${lockDir}`);
+      await delay(100);
+    }
+  }
+}
+
 async function excludeLocalSetupFiles(paths: RunPaths): Promise<void> {
+  const excludePath = await gitExcludePath(paths);
+  await mkdir(path.dirname(excludePath), { recursive: true });
   await appendFile(
-    path.join(paths.workspaceDir, ".git", "info", "exclude"),
+    excludePath,
     "\n# TaskSmith per-run local setup files\n.env\n.env.*\n!.env.example\n!.env.sample\nnode_modules/\n.pnpm-store/\n",
     "utf8",
   );
+}
+
+async function gitExcludePath(paths: RunPaths): Promise<string> {
+  const directoryGitPath = path.join(paths.workspaceDir, ".git", "info", "exclude");
+  if (await pathExists(path.dirname(directoryGitPath))) return directoryGitPath;
+  const result = await runCommand("git", ["rev-parse", "--git-path", "info/exclude"], paths.workspaceDir, {
+    PATH: process.env.PATH ?? "",
+    HOME: process.env.HOME ?? "",
+    GIT_TERMINAL_PROMPT: "0",
+  });
+  if (result.exitCode !== 0) throw new Error(`failed to locate git exclude file: ${summarizeFailure(result)}`);
+  return path.resolve(paths.workspaceDir, result.stdout.trim());
+}
+
+async function pathExists(filePath: string): Promise<boolean> {
+  try {
+    await stat(filePath);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT" || (error as NodeJS.ErrnoException).code === "ENOTDIR") return false;
+    throw error;
+  }
+}
+
+function defaultRepoCacheDir(paths: RunPaths, repoKey: string): string {
+  return path.join(path.dirname(path.dirname(paths.runDir)), "repos", safeRepoCacheKey(repoKey));
+}
+
+function safeRepoCacheKey(repoKey: string): string {
+  return repoKey.replace(/[^A-Za-z0-9._-]+/gu, "_") || "repo";
 }
 
 function appendCapped(current: string, next: string): string {
