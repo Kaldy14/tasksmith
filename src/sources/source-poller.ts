@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import type { AppConfig, GitHubProviderConfig, IssueProviderConfig, RepositoryConfig } from "../domain/types.js";
 import type { FileStore } from "../storage/file-store.js";
 import { SourceIntakeService } from "./source-intake.js";
+import { commentOnJiraIssue, loadJiraClientConfig, searchJiraIssueContexts } from "./jira-client.js";
 
 interface GitHubIssueLabel {
   name: string;
@@ -13,24 +14,6 @@ interface GitHubIssueListItem {
   body?: string;
   url: string;
   labels?: GitHubIssueLabel[];
-}
-
-interface JiraSearchIssueFields {
-  summary: string;
-  description?: unknown;
-  labels?: string[];
-}
-
-interface JiraSearchIssue {
-  key: string;
-  self?: string;
-  fields: JiraSearchIssueFields;
-}
-
-interface JiraClientConfig {
-  baseUrl: string;
-  email: string;
-  apiToken: string;
 }
 
 interface SourcePollError {
@@ -115,25 +98,27 @@ export class SourcePoller {
     issueProvider: Extract<IssueProviderConfig, { type: "jira" }>,
   ): Promise<Pick<SourcePollResult, "createdRuns" | "skippedExistingClaims">> {
     const client = loadJiraClientConfig();
-    const issues = await searchJiraIssues(client, buildJiraJql(issueProvider, this.config.sourceFlow.readinessLabel));
+    const issues = await searchJiraIssueContexts(client, buildJiraJql(issueProvider, this.config.sourceFlow.readinessLabel));
     let createdRuns = 0;
     let skippedExistingClaims = 0;
 
     for (const issue of issues) {
-      const labels = issue.fields.labels ?? [];
+      const labels = issue.labels;
       const routedRepoKey = resolveJiraRepoKey(labels, this.config.sourceFlow.jiraRepoRouting.labels);
       if (routedRepoKey && routedRepoKey !== repoKey) continue;
       if (!routedRepoKey && issueProvider.repoLabel && !labels.includes(issueProvider.repoLabel)) continue;
 
-      const sourceUrl = `${client.baseUrl}/browse/${encodeURIComponent(issue.key)}`;
       const intakeResult = await this.intake.intakeJiraIssue({
         repoKey,
         repo,
         issueKey: issue.key,
-        title: issue.fields.summary,
-        body: stringifyJiraDescription(issue.fields.description),
+        title: issue.title,
+        body: issue.description,
         labels,
-        sourceUrl,
+        sourceUrl: issue.url,
+        comments: issue.comments,
+        attachments: issue.attachments,
+        metadata: issue.metadata,
         comment: (text) => commentOnJiraIssue(client, issue.key, text),
       });
       createdRuns += intakeResult.createdRuns;
@@ -169,16 +154,6 @@ async function listGitHubIssues(
   return parsed.map(parseGitHubIssue);
 }
 
-function loadJiraClientConfig(): JiraClientConfig {
-  const baseUrl = process.env.TASKSMITH_JIRA_BASE_URL?.trim().replace(/\/$/, "");
-  const email = process.env.TASKSMITH_JIRA_EMAIL?.trim();
-  const apiToken = process.env.TASKSMITH_JIRA_API_TOKEN?.trim();
-  if (!baseUrl) throw new Error("TASKSMITH_JIRA_BASE_URL is required for Jira source polling");
-  if (!email) throw new Error("TASKSMITH_JIRA_EMAIL is required for Jira source polling");
-  if (!apiToken) throw new Error("TASKSMITH_JIRA_API_TOKEN is required for Jira source polling");
-  return { baseUrl, email, apiToken };
-}
-
 function buildJiraJql(issueProvider: Extract<IssueProviderConfig, { type: "jira" }>, readinessLabel: string): string {
   if (issueProvider.jql?.trim()) return issueProvider.jql.trim();
   const clauses = [`labels = ${quoteJiraString(readinessLabel)}`];
@@ -199,43 +174,6 @@ function resolveJiraRepoKey(labels: string[], routingLabels: Record<string, stri
   return undefined;
 }
 
-async function searchJiraIssues(client: JiraClientConfig, jql: string): Promise<JiraSearchIssue[]> {
-  const searchUrl = new URL("/rest/api/3/search", client.baseUrl);
-  searchUrl.searchParams.set("jql", jql);
-  searchUrl.searchParams.set("fields", "summary,description,labels");
-  searchUrl.searchParams.set("maxResults", "50");
-  const response = await fetch(searchUrl, { headers: jiraHeaders(client) });
-  const text = await response.text();
-  if (!response.ok) throw new Error(`Jira search failed (${response.status}): ${text}`);
-  const parsed = text ? JSON.parse(text) as unknown : {};
-  if (!isRecord(parsed) || !Array.isArray(parsed.issues)) throw new Error("Jira search returned invalid JSON");
-  return parsed.issues.map(parseJiraIssue);
-}
-
-async function commentOnJiraIssue(client: JiraClientConfig, issueKey: string, text: string): Promise<void> {
-  const commentUrl = new URL(`/rest/api/3/issue/${encodeURIComponent(issueKey)}/comment`, client.baseUrl);
-  const response = await fetch(commentUrl, {
-    method: "POST",
-    headers: { ...jiraHeaders(client), "content-type": "application/json" },
-    body: JSON.stringify({
-      body: {
-        type: "doc",
-        version: 1,
-        content: [{ type: "paragraph", content: [{ type: "text", text }] }],
-      },
-    }),
-  });
-  const body = await response.text();
-  if (!response.ok) throw new Error(`Jira comment failed (${response.status}): ${body}`);
-}
-
-function jiraHeaders(client: JiraClientConfig): Record<string, string> {
-  return {
-    accept: "application/json",
-    authorization: `Basic ${Buffer.from(`${client.email}:${client.apiToken}`, "utf8").toString("base64")}`,
-  };
-}
-
 function parseGitHubIssue(value: unknown): GitHubIssueListItem {
   if (!isRecord(value)) throw new Error("GitHub issue must be an object");
   if (typeof value.number !== "number") throw new Error("GitHub issue number must be a number");
@@ -254,39 +192,6 @@ function parseGitHubIssue(value: unknown): GitHubIssueListItem {
 function parseGitHubIssueLabel(value: unknown): GitHubIssueLabel {
   if (!isRecord(value) || typeof value.name !== "string") throw new Error("GitHub issue label must have a name");
   return { name: value.name };
-}
-
-function parseJiraIssue(value: unknown): JiraSearchIssue {
-  if (!isRecord(value)) throw new Error("Jira issue must be an object");
-  if (typeof value.key !== "string") throw new Error("Jira issue key must be a string");
-  if (!isRecord(value.fields)) throw new Error("Jira issue fields must be an object");
-  if (typeof value.fields.summary !== "string") throw new Error("Jira issue summary must be a string");
-  const labels = Array.isArray(value.fields.labels) ? value.fields.labels.filter((label): label is string => typeof label === "string") : [];
-  return {
-    key: value.key,
-    ...(typeof value.self === "string" ? { self: value.self } : {}),
-    fields: {
-      summary: value.fields.summary,
-      ...(value.fields.description !== undefined ? { description: value.fields.description } : {}),
-      labels,
-    },
-  };
-}
-
-function stringifyJiraDescription(description: unknown): string {
-  const text = extractText(description).replace(/\n{3,}/g, "\n\n").trim();
-  if (text) return text.slice(0, 20_000);
-  if (description === undefined || description === null) return "";
-  return JSON.stringify(description).slice(0, 20_000);
-}
-
-function extractText(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (Array.isArray(value)) return value.map(extractText).filter(Boolean).join("\n");
-  if (!isRecord(value)) return "";
-  const text = typeof value.text === "string" ? value.text : "";
-  const content = Array.isArray(value.content) ? value.content.map(extractText).filter(Boolean).join("\n") : "";
-  return [text, content].filter(Boolean).join("\n");
 }
 
 async function runGh(args: string[], ghConfigDir: string | undefined): Promise<CommandResult> {

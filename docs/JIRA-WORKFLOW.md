@@ -11,18 +11,24 @@ TaskSmith polls Jira using configured watches.
 Example JQL:
 
 ```jql
-labels = tasksmith AND status = "Ready for AI"
+labels = myth AND status = "Ready for AI"
 ```
+
+`myth` is the preferred readiness label for the next deployment. Older examples may still use `tasksmith` for local e2e fixtures; the label remains configurable through `sourceFlow.readinessLabel` and per-repo Jira `jql`.
 
 When an issue matches:
 
 ```txt
-1. acquire claim in TaskSmith's source claim store,
-2. create Run,
-3. enqueue Run,
-4. comment on Jira with TaskSmith run URL,
-5. later transition Jira issue or add status labels when status-sync policy is implemented.
+1. search Jira with /rest/api/3/search/jql,
+2. fetch the issue description, labels, status/project metadata, comments, and attachment metadata,
+3. acquire claim in TaskSmith's source claim store,
+4. create Run,
+5. enqueue Run,
+6. comment on Jira with TaskSmith run URL,
+7. later transition Jira issue or add status labels when status-sync policy is implemented.
 ```
+
+The search endpoint is important: `/rest/api/3/search` is deprecated/being removed in Jira Cloud, so TaskSmith uses `/rest/api/3/search/jql` for new Jira intake work.
 
 ## Idempotency
 
@@ -72,6 +78,18 @@ ai-running
 ai-pr-created
 ai-failed
 ```
+
+## Issue context
+
+TaskSmith should read the maximum useful issue context before prompting the agent:
+
+- summary and description, converting Atlassian Document Format to bounded plain text,
+- labels and configured routing metadata,
+- status, project, issue type, and components,
+- all visible comments through the paginated comments API,
+- attachment metadata such as id, filename, MIME type, and size.
+
+Attachment contents are not downloaded by default yet. Image/text/PDF extraction can be added later behind explicit size/type limits. All Jira text, comment text, filenames, and attachment content must be treated as untrusted input.
 
 ## Comments
 

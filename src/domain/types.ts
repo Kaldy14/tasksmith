@@ -23,6 +23,28 @@ export type ControlKind = "prompt" | "steer" | "follow_up";
 
 export type RunSourceType = "manual" | "github_issue" | "jira";
 
+export interface SourceCommentSnapshot {
+  id: string;
+  author?: string;
+  created?: string;
+  updated?: string;
+  body: string;
+}
+
+export interface SourceAttachmentSnapshot {
+  id: string;
+  filename: string;
+  mimeType?: string;
+  size?: number;
+}
+
+export interface SourceMetadataSnapshot {
+  status?: string;
+  projectKey?: string;
+  issueType?: string;
+  components?: string[];
+}
+
 export interface RunSourceSnapshot {
   type: RunSourceType;
   key: string;
@@ -30,6 +52,9 @@ export interface RunSourceSnapshot {
   url?: string;
   body?: string;
   labels: string[];
+  comments?: SourceCommentSnapshot[];
+  attachments?: SourceAttachmentSnapshot[];
+  metadata?: SourceMetadataSnapshot;
 }
 
 export interface PullRequestSummary {

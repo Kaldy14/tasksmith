@@ -15,6 +15,7 @@
     "db:migrate": "tsx scripts/db-migrate.ts",
     "db:sync-metadata": "tsx scripts/db-sync-metadata.ts",
     "auth:bootstrap-admin": "tsx scripts/auth-bootstrap-admin.ts",
+    "jira:smoke": "tsx scripts/jira-smoke.ts",
     "pi:spike": "tsx scripts/pi-runtime-spike.ts",
     "e2e:pi-spike": "tsx scripts/e2e-pi-runtime-spike.ts",
     "e2e:manual-run": "tsx scripts/e2e-manual-run-api.ts",
