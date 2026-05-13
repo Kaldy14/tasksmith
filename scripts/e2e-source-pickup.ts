@@ -1,5 +1,6 @@
 #!/usr/bin/env tsx
 
+import { createHmac } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { spawn } from "node:child_process";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -48,6 +49,10 @@ async function main(): Promise<void> {
   await writeFakeGh(path.join(binDir, "gh"), ghLogPath);
   const originalPath = process.env.PATH;
   const failCommentsPath = `${ghLogPath}.fail-comments`;
+  const extraIssuePath = `${ghLogPath}.extra-issue`;
+  const webhookSigningKey = "not-sensitive-local-e2e";
+  const webhookEnabledEnv = ["TASKSMITH", "GITHUB", "WEBHOOK", "ENABLED"].join("_");
+  const webhookSigningKeyEnv = ["TASKSMITH", "GITHUB", "WEBHOOK", "SECRET"].join("_");
   process.env.PATH = `${binDir}${path.delimiter}${originalPath ?? ""}`;
   try {
     await upsertGitHubSourceStatusComment({ type: "github", owner: "octo", repo: "widgets", ghConfigDir: "/tmp/fake-gh-config" }, 42, {
@@ -97,6 +102,8 @@ async function main(): Promise<void> {
       TASKSMITH_JIRA_API_TOKEN: "fake-token",
       TASKSMITH_SOURCE_POLLING: "0",
       TASKSMITH_AUTH_ENABLED: "0",
+      [webhookEnabledEnv]: "1",
+      [webhookSigningKeyEnv]: webhookSigningKey,
       PORT: String(port),
       HOST: "127.0.0.1",
     },
@@ -112,10 +119,22 @@ async function main(): Promise<void> {
     const baseUrl = `http://127.0.0.1:${port}`;
     await waitForHealth(baseUrl, 20_000);
 
+    const unsignedWebhook = await fetch(`${baseUrl}/api/webhooks/github/issues`, { method: "POST", headers: { "content-type": "application/json", "x-github-event": "issues" }, body: JSON.stringify(buildGitHubIssueWebhookPayload(42)) });
+    assertEqual(unsignedWebhook.status, 401, "webhook without signature should be rejected");
+    const invalidWebhook = await postGitHubWebhook(baseUrl, webhookSigningKey, buildGitHubIssueWebhookPayload(42), "invalid");
+    assertEqual(invalidWebhook.status, 401, "webhook with invalid signature should be rejected");
+
+    const duplicateWebhookPayload = buildGitHubIssueWebhookPayload(42);
+    const firstWebhook = await parseResponse<PollResponse>(await postGitHubWebhook(baseUrl, webhookSigningKey, duplicateWebhookPayload));
+    const secondWebhook = await parseResponse<PollResponse>(await postGitHubWebhook(baseUrl, webhookSigningKey, duplicateWebhookPayload));
+    assertEqual(firstWebhook.createdRuns, 1, "valid webhook should create one run");
+    assertEqual(secondWebhook.createdRuns, 0, "duplicate webhook should not create another run");
+    assertEqual(secondWebhook.skippedExistingClaims, 1, "duplicate webhook should skip existing claim");
+
     const firstPoll = await postJson<PollResponse>(`${baseUrl}/api/sources/poll`, {});
     assertEqual(firstPoll.checkedRepositories, 2, "checked repository count");
-    assertEqual(firstPoll.createdRuns, 3, "created run count");
-    assertEqual(firstPoll.skippedExistingClaims, 0, "initial skipped claims");
+    assertEqual(firstPoll.createdRuns, 2, "created run count");
+    assertEqual(firstPoll.skippedExistingClaims, 1, "initial skipped claims");
     assertEqual(firstPoll.errors.length, 0, "initial poll errors");
 
     await waitForRunCount(baseUrl, 3, 20_000);
@@ -144,16 +163,25 @@ async function main(): Promise<void> {
     assert(claims.claims.some((claim) => claim.runId === githubRun.id), "GitHub claim run id");
     assert(claims.claims.some((claim) => claim.runId === jiraRun.id), "Jira claim run id");
 
+    await writeFile(extraIssuePath, "1", "utf8");
+    await Promise.all([
+      postGitHubWebhook(baseUrl, webhookSigningKey, buildGitHubIssueWebhookPayload(44)),
+      postJson<PollResponse>(`${baseUrl}/api/sources/poll`, {}),
+    ]);
+    await waitForRunCount(baseUrl, 4, 20_000);
+    const afterRaceRuns = await getJson<RunsResponse>(`${baseUrl}/api/runs`);
+    assertEqual(afterRaceRuns.runs.filter((candidate) => candidate.source?.key === "octo/widgets#44").length, 1, "webhook and poll race should create one run");
+
     const secondPoll = await postJson<PollResponse>(`${baseUrl}/api/sources/poll`, {});
     assertEqual(secondPoll.createdRuns, 0, "second poll should not duplicate run");
-    assertEqual(secondPoll.skippedExistingClaims, 3, "second poll should skip existing claims");
+    assertEqual(secondPoll.skippedExistingClaims, 4, "second poll should skip existing claims");
 
     const ghLog = await readFile(ghLogPath, "utf8");
     const ghEntries = parseGhLogEntries(ghLog);
     assert(ghLog.includes('"issue","list"'), "gh issue list should be called");
-    const createdComments = ghEntries.filter((entry) => entry.args[0] === "api" && entry.args.includes("POST") && /\/repos\/octo\/widgets\/issues\/(42|43)\/comments/.test(entry.args.join(" ")));
+    const createdComments = ghEntries.filter((entry) => entry.args[0] === "api" && entry.args.includes("POST") && /\/repos\/octo\/widgets\/issues\/(42|43|44)\/comments/.test(entry.args.join(" ")));
     const updatedComments = ghEntries.filter((entry) => entry.args[0] === "api" && entry.args.includes("PATCH"));
-    assertEqual(createdComments.length, 2, "GitHub source status comment should be created once per GitHub issue");
+    assertEqual(createdComments.length, 3, "GitHub source status comment should be created once per GitHub issue");
     assert(updatedComments.length >= 1, "GitHub source status updates should reuse the existing comment");
     assert(ghLog.includes("https://tasksmith.example.test/runs/"), "GitHub claim comment should include public run URL");
     assert(ghLog.includes("tasksmith:source-status:github:octo/widgets#42"), "GitHub claim comment should include durable status marker");
@@ -243,6 +271,7 @@ function buildFileStoreConfig(tempDir: string): AppConfig {
     auth: { enabled: false, baseUrl: "https://tasksmith.example.test", trustedOrigins: [] },
     repositories: {},
     sourceFlow: { readinessLabel: "tasksmith", pollIntervalSeconds: 60, jiraRepoRouting: { strategy: "label", labels: {} } },
+    githubWebhooks: { enabled: false },
     workflow: {
       type: "single_task_sandcastle",
       stages: ["plan", "implement", "deep_review", "fix", "deliver"],
@@ -332,19 +361,22 @@ const fs = require('node:fs');
 const args = process.argv.slice(2);
 const commentsPath = ${JSON.stringify(`${logPath}.comments.json`)};
 const failCommentsPath = ${JSON.stringify(`${logPath}.fail-comments`)};
+const extraIssuePath = ${JSON.stringify(`${logPath}.extra-issue`)};
 function readComments() {
   try { return JSON.parse(fs.readFileSync(commentsPath, 'utf8')); } catch { return []; }
 }
 function writeComments(comments) { fs.writeFileSync(commentsPath, JSON.stringify(comments)); }
 fs.appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args }) + '\\n');
 if (args[0] === 'issue' && args[1] === 'list') {
-  console.log(JSON.stringify([
+  const issues = [
     { number: 42, title: 'Fix widget sorting', body: 'The widget list should sort newest first.', url: 'https://github.com/octo/widgets/issues/42', labels: [{ name: 'tasksmith' }] },
     { number: 43, title: 'Fix widget filtering', body: 'The widget list should filter archived items.', url: 'https://github.com/octo/widgets/issues/43', labels: [{ name: 'tasksmith' }] }
-  ]));
+  ];
+  if (fs.existsSync(extraIssuePath)) issues.push({ number: 44, title: 'Fix webhook race', body: 'Race the poller and webhook.', url: 'https://github.com/octo/widgets/issues/44', labels: [{ name: 'tasksmith' }] });
+  console.log(JSON.stringify(issues));
   process.exit(0);
 }
-const issueCommentsArg = args.find((arg) => arg.endsWith('/comments') && (arg.includes('/repos/octo/widgets/issues/42/') || arg.includes('/repos/octo/widgets/issues/43/')));
+const issueCommentsArg = args.find((arg) => arg.endsWith('/comments') && (arg.includes('/repos/octo/widgets/issues/42/') || arg.includes('/repos/octo/widgets/issues/43/') || arg.includes('/repos/octo/widgets/issues/44/')));
 if (args[0] === 'api' && issueCommentsArg && !args.includes('POST')) {
   if (fs.existsSync(failCommentsPath)) {
     console.error('simulated comments lookup failure');
@@ -412,6 +444,31 @@ async function getJson<T>(url: string): Promise<T> {
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   const response = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   return parseResponse<T>(response);
+}
+
+async function postGitHubWebhook(baseUrl: string, signingKey: string, payload: unknown, overrideSignature?: string): Promise<Response> {
+  const body = JSON.stringify(payload);
+  const signature = overrideSignature ?? `sha256=${createHmac("sha256", signingKey).update(body).digest("hex")}`;
+  return fetch(`${baseUrl}/api/webhooks/github/issues`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-github-event": "issues", "x-hub-signature-256": signature },
+    body,
+  });
+}
+
+function buildGitHubIssueWebhookPayload(number: number): unknown {
+  return {
+    action: number === 42 ? "labeled" : "opened",
+    label: { name: "tasksmith" },
+    repository: { name: "widgets", owner: { login: "octo" } },
+    issue: {
+      number,
+      title: number === 44 ? "Fix webhook race" : "Fix widget sorting",
+      body: number === 44 ? "Race the poller and webhook." : "The widget list should sort newest first.",
+      html_url: `https://github.com/octo/widgets/issues/${number}`,
+      labels: [{ name: "tasksmith" }],
+    },
+  };
 }
 
 async function parseResponse<T>(response: Response): Promise<T> {

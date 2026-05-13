@@ -199,6 +199,10 @@ export interface SourceFlowConfig {
   };
 }
 
+export type GitHubWebhookConfig =
+  | { enabled: false }
+  | { enabled: true; signingKey: string };
+
 export type DeliveryMode = "ready_pr" | "squash_merge_main";
 
 export interface CodeRabbitCliConfig {
@@ -364,6 +368,7 @@ export interface AppConfig {
   configFilePath?: string;
   repositories: Record<string, RepositoryConfig>;
   sourceFlow: SourceFlowConfig;
+  githubWebhooks: GitHubWebhookConfig;
   workflow: SingleTaskWorkflowConfig;
   verification: VerificationConfig;
   queue: QueueLeaseConfig;

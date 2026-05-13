@@ -9,6 +9,8 @@ import type { FileStore } from "../storage/file-store.js";
 import type { RuntimeManager } from "../runtime/runtime-manager.js";
 import type { RunScheduler } from "../runtime/run-scheduler.js";
 import type { SourcePoller } from "../sources/source-poller.js";
+import type { SourceIntakeService } from "../sources/source-intake.js";
+import { handleGitHubIssuesWebhook } from "../sources/github-webhook.js";
 import type { TaskSmithAuthService } from "../auth/tasksmith-auth.js";
 import { readEditableConfig, saveEditableConfig } from "./config.js";
 import { EventHub, sendJson } from "./event-hub.js";
@@ -19,6 +21,7 @@ interface ServerDeps {
   runtime: RuntimeManager;
   scheduler: RunScheduler;
   sourcePoller: SourcePoller;
+  sourceIntake: SourceIntakeService;
   hub: EventHub;
   auth: TaskSmithAuthService | undefined;
 }
@@ -72,6 +75,19 @@ async function routeHttp(deps: ServerDeps, req: IncomingMessage, res: ServerResp
 
   if (deps.auth && url.pathname.startsWith("/api/auth/")) {
     await deps.auth.handleNode(req, res);
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/webhooks/github/issues") {
+    try {
+      const rawBody = await readRawBody(req);
+      const result = await handleGitHubIssuesWebhook(deps.config, deps.sourceIntake, req.headers, rawBody);
+      if (result.createdRuns > 0) deps.scheduler.wake();
+      sendJson(res, 202, result);
+    } catch (error: unknown) {
+      const statusCode = isStatusError(error) ? error.statusCode : 500;
+      sendJson(res, statusCode, { error: error instanceof Error ? error.message : String(error) });
+    }
     return;
   }
 
@@ -262,14 +278,24 @@ async function serveFile(filePath: string, res: ServerResponse): Promise<boolean
 }
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
+  const text = (await readRawBody(req)).toString("utf8");
+  return text.trim() ? JSON.parse(text) : {};
+}
+
+async function readRawBody(req: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
+  let size = 0;
   for await (const chunk of req) {
-    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
-    const size = chunks.reduce((sum, item) => sum + item.byteLength, 0);
+    const buffer = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+    chunks.push(buffer);
+    size += buffer.byteLength;
     if (size > 1_000_000) throw new Error("Request body too large");
   }
-  const text = Buffer.concat(chunks).toString("utf8");
-  return text.trim() ? JSON.parse(text) : {};
+  return Buffer.concat(chunks);
+}
+
+function isStatusError(error: unknown): error is Error & { statusCode: number } {
+  return error instanceof Error && "statusCode" in error && typeof (error as { statusCode?: unknown }).statusCode === "number";
 }
 
 function parseUrl(req: IncomingMessage): URL {

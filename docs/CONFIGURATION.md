@@ -145,6 +145,10 @@ curl -X POST http://127.0.0.1:3000/api/sources/poll
 curl http://127.0.0.1:3000/api/source-claims
 ```
 
+Optional GitHub Issues webhooks can reduce pickup latency. Enable the GitHub webhook flag with `TASKSMITH_GITHUB_WEBHOOK_ENABLED` and provide the GitHub webhook signing key with `TASKSMITH_GITHUB_WEBHOOK_SECRET` through the environment, then configure the repository webhook to send Issues events to `/api/webhooks/github/issues` using the same signing key. TaskSmith verifies GitHub's SHA-256 signature before reading the event. Missing or invalid signatures are rejected. Handled issue actions are label additions plus opened, reopened, and edited issues that already carry the readiness label; each accepted event uses the same source-claim path as polling, so duplicate deliveries and webhook/poller races still create one run and one pickup comment per issue.
+
+Expose the endpoint only through your chosen private path, such as Tailscale or a reverse proxy with TLS. Public internet exposure decisions are deployment-specific and outside TaskSmith's source intake logic.
+
 Automatic polling is opt-in for now:
 
 ```txt

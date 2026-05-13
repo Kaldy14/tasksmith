@@ -7,6 +7,7 @@ import { FreshContextReviewer } from "../review/fresh-context-reviewer.js";
 import { RuntimeManager } from "../runtime/runtime-manager.js";
 import { RunScheduler } from "../runtime/run-scheduler.js";
 import { DeterministicVerifier } from "../verifier/deterministic-verifier.js";
+import { SourceIntakeService } from "../sources/source-intake.js";
 import { SourcePoller } from "../sources/source-poller.js";
 import { createTaskSmithAuthService } from "../auth/tasksmith-auth.js";
 import { createTaskSmithServer } from "./http.js";
@@ -28,11 +29,12 @@ const scheduler = new RunScheduler(store, runtime, 1_000, {
   ...(config.queue.maxActiveRunsPerRepo === undefined ? {} : { maxActiveRunsPerRepo: config.queue.maxActiveRunsPerRepo }),
 });
 scheduler.start();
+const sourceIntake = new SourceIntakeService(config, store);
 const sourcePoller = new SourcePoller(config, store);
 if (process.env.TASKSMITH_SOURCE_POLLING === "1" || process.env.TASKSMITH_SOURCE_POLLING === "true") {
   startSourcePolling(sourcePoller, config.sourceFlow.pollIntervalSeconds);
 }
-const server = createTaskSmithServer({ config, store, runtime, scheduler, sourcePoller, hub, auth });
+const server = createTaskSmithServer({ config, store, runtime, scheduler, sourcePoller, sourceIntake, hub, auth });
 
 server.listen(config.port, config.host, () => {
   console.log(`TaskSmith listening on http://${config.host}:${config.port}`);
@@ -45,6 +47,7 @@ function scrubRuntimeSecretsFromProcessEnv(): void {
   delete process.env.TASKSMITH_DATABASE_URL;
   delete process.env.TASKSMITH_AUTH_SECRET;
   delete process.env.BETTER_AUTH_SECRET;
+  delete process.env[["TASKSMITH", "GITHUB", "WEBHOOK", "SECRET"].join("_")];
 }
 
 function startSourcePolling(sourcePoller: SourcePoller, intervalSeconds: number): void {

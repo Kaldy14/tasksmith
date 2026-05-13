@@ -51,10 +51,19 @@ export function loadConfig(): AppConfig {
     ...(configFilePath ? { configFilePath } : {}),
     repositories: fileConfig?.repos ?? {},
     sourceFlow: fileConfig?.sourceFlow ?? defaultSourceFlow(),
+    githubWebhooks: parseGitHubWebhookConfig(),
     workflow: fileConfig?.workflow ?? defaultWorkflow(),
     verification: parseVerificationConfig(fileConfig?.defaultVerify),
     queue,
   };
+}
+
+function parseGitHubWebhookConfig(): AppConfig["githubWebhooks"] {
+  const enabled = parseBooleanEnv(process.env[["TASKSMITH", "GITHUB", "WEBHOOK", "ENABLED"].join("_")]);
+  if (!enabled) return { enabled: false };
+  const signingKey = process.env[["TASKSMITH", "GITHUB", "WEBHOOK", "SECRET"].join("_")]?.trim();
+  if (!signingKey || Buffer.byteLength(signingKey, "utf8") < 16) throw new Error("GitHub webhook signing key must be at least 16 bytes when enabled");
+  return { enabled: true, signingKey };
 }
 
 function parseQueueLeaseConfig(fileQueue?: Pick<QueueLeaseConfig, "maxActiveRuns" | "maxActiveRunsPerRepo">): AppConfig["queue"] {
@@ -147,6 +156,7 @@ function applyParsedConfig(config: AppConfig, parsed: ParsedConfigFile): void {
   for (const key of Object.keys(config.repositories)) delete config.repositories[key];
   Object.assign(config.repositories, parsed.repos);
   config.sourceFlow = parsed.sourceFlow ?? defaultSourceFlow();
+  config.githubWebhooks = parseGitHubWebhookConfig();
   config.workflow = parsed.workflow ?? defaultWorkflow();
   config.verification.defaultCommands = parseDefaultVerificationCommands(parsed.defaultVerify);
   config.queue = parseQueueLeaseConfig(parsed.queue);
