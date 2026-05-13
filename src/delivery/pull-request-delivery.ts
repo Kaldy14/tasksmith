@@ -12,6 +12,7 @@ import type {
 import { redactForStorage } from "../domain/redaction.js";
 import type { FileStore } from "../storage/file-store.js";
 import { parseGitHubIssueNumber, upsertGitHubSourceStatusComment } from "../sources/github-status-comment.js";
+import { commentOnJiraIssue, loadJiraClientConfig } from "../sources/jira-client.js";
 
 interface CommandResult {
   code: number | null;
@@ -24,12 +25,6 @@ interface DeliveryResult {
   status: "created" | "skipped";
   summary: string;
   pullRequest?: PullRequestRecord;
-}
-
-interface JiraClientConfig {
-  baseUrl: string;
-  email: string;
-  apiToken: string;
 }
 
 type DeliveryEmitter = (event: NormalizedRunEvent) => Promise<void>;
@@ -526,36 +521,3 @@ function buildSourceSquashMergeComment(
   return `TaskSmith squash-merged this issue to ${targetBranch}:\n\n${commitLine}\n\nVerification: passed\nReview: ${review.summary}\nRun: ${publicBaseUrl}/runs/${run.id}`;
 }
 
-function loadJiraClientConfig(): JiraClientConfig {
-  const baseUrl = process.env.TASKSMITH_JIRA_BASE_URL?.trim().replace(/\/$/, "");
-  const email = process.env.TASKSMITH_JIRA_EMAIL?.trim();
-  const apiToken = process.env.TASKSMITH_JIRA_API_TOKEN?.trim();
-  if (!baseUrl) throw new Error("TASKSMITH_JIRA_BASE_URL is required for Jira PR comments");
-  if (!email) throw new Error("TASKSMITH_JIRA_EMAIL is required for Jira PR comments");
-  if (!apiToken) throw new Error("TASKSMITH_JIRA_API_TOKEN is required for Jira PR comments");
-  return { baseUrl, email, apiToken };
-}
-
-async function commentOnJiraIssue(client: JiraClientConfig, issueKey: string, text: string): Promise<void> {
-  const commentUrl = new URL(`/rest/api/3/issue/${encodeURIComponent(issueKey)}/comment`, client.baseUrl);
-  const response = await fetch(commentUrl, {
-    method: "POST",
-    headers: { ...jiraHeaders(client), "content-type": "application/json" },
-    body: JSON.stringify({
-      body: {
-        type: "doc",
-        version: 1,
-        content: [{ type: "paragraph", content: [{ type: "text", text }] }],
-      },
-    }),
-  });
-  const responseText = await response.text();
-  if (!response.ok) throw new Error(`Jira comment failed (${response.status}): ${responseText}`);
-}
-
-function jiraHeaders(client: JiraClientConfig): Record<string, string> {
-  return {
-    accept: "application/json",
-    authorization: `Basic ${Buffer.from(`${client.email}:${client.apiToken}`, "utf8").toString("base64")}`,
-  };
-}

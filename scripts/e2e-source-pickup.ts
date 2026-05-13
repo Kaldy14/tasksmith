@@ -19,7 +19,21 @@ interface PollResponse {
 }
 
 interface RunsResponse {
-  runs: Array<{ id: string; sourceType: string; source?: { key: string; labels: string[]; url?: string }; claimKey?: string; repoKey: string; status: string }>;
+  runs: Array<{
+    id: string;
+    sourceType: string;
+    source?: {
+      key: string;
+      labels: string[];
+      url?: string;
+      comments?: Array<{ id: string; body: string }>;
+      attachments?: Array<{ id: string; filename: string; mimeType?: string; size?: number }>;
+      metadata?: { status?: string; projectKey?: string; issueType?: string; components?: string[] };
+    };
+    claimKey?: string;
+    repoKey: string;
+    status: string;
+  }>;
 }
 
 interface ClaimsResponse {
@@ -155,6 +169,12 @@ async function main(): Promise<void> {
     assertEqual(jiraRun.repoKey, "source-jira-e2e", "Jira run should route by repo label");
     assertEqual(jiraRun.source?.key, "VOS-42", "Jira run source key");
     assert(jiraRun.source?.labels.includes("source-jira-e2e") === true, "Jira source labels should include repo routing label");
+    assertEqual(jiraRun.source?.comments?.length, 2, "Jira source snapshot should include paginated comments");
+    assert(jiraRun.source?.comments?.some((comment) => comment.body.includes("First page comment")) === true, "Jira source snapshot should include first comment body");
+    assertEqual(jiraRun.source?.attachments?.length, 2, "Jira source snapshot should include attachment metadata");
+    assert(jiraRun.source?.attachments?.some((attachment) => attachment.filename === "error-screenshot.png" && attachment.mimeType === "image/png") === true, "Jira attachment metadata should include image files");
+    assertEqual(jiraRun.source?.metadata?.status, "Ready for Dev", "Jira source snapshot should include status metadata");
+    assertEqual(jiraRun.source?.metadata?.projectKey, "VOS", "Jira source snapshot should include project metadata");
     assertEqual(jiraRun.claimKey, "jira:VOS-42", "Jira run claim key");
 
     const claims = await getJson<ClaimsResponse>(`${baseUrl}/api/source-claims`);
@@ -320,19 +340,41 @@ function buildConfig(): unknown {
 function createFakeJiraServer(comments: string[]): ReturnType<typeof createServer> {
   return createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
-    if (req.method === "GET" && url.pathname === "/rest/api/3/search") {
+    if (req.method === "POST" && url.pathname === "/rest/api/3/search/jql") {
+      const body = JSON.parse(await readRequestBody(req)) as unknown;
+      assert(isRecord(body) && body.jql === "project = VOS AND labels = tasksmith", "Jira search should use configured JQL");
       sendJson(res, 200, {
-        issues: [
-          {
-            key: "VOS-42",
-            fields: {
-              summary: "Fix Jira-routed widget",
-              description: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Use the Jira requirements." }] }] },
-              labels: ["tasksmith", "source-jira-e2e"],
-            },
-          },
-        ],
+        isLast: true,
+        issues: [{ key: "VOS-42" }],
       });
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/rest/api/3/issue/VOS-42") {
+      sendJson(res, 200, {
+        key: "VOS-42",
+        fields: {
+          summary: "Fix Jira-routed widget",
+          description: adfDoc("Use the Jira requirements."),
+          labels: ["tasksmith", "source-jira-e2e"],
+          status: { name: "Ready for Dev" },
+          project: { key: "VOS" },
+          issuetype: { name: "Bug" },
+          components: [{ name: "Widgets" }],
+          attachment: [
+            { id: "10001", filename: "error-screenshot.png", mimeType: "image/png", size: 12345 },
+            { id: "10002", filename: "browser-console.log", mimeType: "text/plain", size: 2345 },
+          ],
+        },
+      });
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/rest/api/3/issue/VOS-42/comment") {
+      const startAt = Number(url.searchParams.get("startAt") ?? "0");
+      const fakeComments = [
+        { id: "20001", body: adfDoc("First page comment with reproduction detail."), created: "2026-05-13T12:00:00.000+0000", author: { displayName: "Reporter" } },
+        { id: "20002", body: adfDoc("Second page comment with expected behavior."), created: "2026-05-13T12:05:00.000+0000", author: { displayName: "Developer" } },
+      ];
+      sendJson(res, 200, { startAt, maxResults: 1, total: fakeComments.length, comments: fakeComments.slice(startAt, startAt + 1) });
       return;
     }
     if (req.method === "POST" && url.pathname === "/rest/api/3/issue/VOS-42/comment") {
@@ -342,6 +384,10 @@ function createFakeJiraServer(comments: string[]): ReturnType<typeof createServe
     }
     sendJson(res, 404, { error: `unexpected Jira route ${req.method ?? "GET"} ${url.pathname}` });
   });
+}
+
+function adfDoc(text: string): Record<string, unknown> {
+  return { type: "doc", version: 1, content: [{ type: "paragraph", content: [{ type: "text", text }] }] };
 }
 
 async function readRequestBody(req: IncomingMessage): Promise<string> {

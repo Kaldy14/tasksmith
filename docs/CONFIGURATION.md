@@ -17,7 +17,7 @@ Minimal shape:
 ```json
 {
   "sourceFlow": {
-    "readinessLabel": "tasksmith",
+    "readinessLabel": "myth",
     "pollIntervalSeconds": 60,
     "jiraRepoRouting": { "strategy": "label", "labels": { "vosime-admin": "vosime-admin" } }
   },
@@ -259,7 +259,7 @@ config/examples/work.jira.github.json
 
 In that config:
 
-- `sourceFlow.readinessLabel = "tasksmith"` is the global Jira pickup label.
+- `sourceFlow.readinessLabel = "myth"` is the preferred global Jira pickup label for the next deployment. Local examples may still use `tasksmith` for e2e fixtures.
 - `sourceFlow.jiraRepoRouting.labels` maps Jira labels to TaskSmith repo keys.
 - `issueProvider.type = "jira"` marks the repo for Jira intake.
 - `jql` defines the readiness query for that repo.
@@ -272,7 +272,7 @@ Example routing:
 ```json
 {
   "sourceFlow": {
-    "readinessLabel": "tasksmith",
+    "readinessLabel": "myth",
     "jiraRepoRouting": {
       "strategy": "label",
       "labels": {
@@ -302,7 +302,15 @@ TASKSMITH_JIRA_EMAIL=deploy@example.com
 TASKSMITH_JIRA_API_TOKEN=<token-from-secret-store>
 ```
 
-The Jira poller uses each repo's configured `issueProvider.jql` when present. If `jql` is omitted, it builds a simple readiness-label query from `projectKey`, `sourceFlow.readinessLabel`, and `repoLabel`. Claim keys are `jira:<ISSUEKEY>`, so duplicate polling or overlapping repo queries do not create duplicate Runs.
+The Jira poller uses each repo's configured `issueProvider.jql` when present. If `jql` is omitted, it builds a simple readiness-label query from `projectKey`, `sourceFlow.readinessLabel`, and `repoLabel`. Jira search uses `/rest/api/3/search/jql` because the older `/rest/api/3/search` endpoint is deprecated/being removed in Jira Cloud. After search, TaskSmith fetches each issue's description, labels, status/project metadata, paginated comments, and attachment metadata before creating a Run. Claim keys are `jira:<ISSUEKEY>`, so duplicate polling or overlapping repo queries do not create duplicate Runs.
+
+For read-only API diagnostics against a known issue without comments, labels, or Run creation:
+
+```bash
+pnpm jira:smoke ITE-408
+```
+
+The smoke command prints only counts/metadata and does not print Jira issue text or token material.
 
 ## Sandcastle-inspired single-task workflow
 
