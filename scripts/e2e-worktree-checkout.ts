@@ -46,9 +46,9 @@ async function main(): Promise<void> {
     const excludePath = path.resolve(run1.paths.workspaceDir, await gitOutput(["rev-parse", "--git-path", "info/exclude"], run1.paths.workspaceDir));
     const exclude = await readFile(excludePath, "utf8");
     assert(exclude.includes(".env.*") && exclude.includes("node_modules/"), "per-run exclude should protect local setup files");
-    await excludeLocalSetupFiles(run1.paths);
+    await Promise.all(Array.from({ length: 10 }, async () => excludeLocalSetupFiles(run1.paths)));
     const excludeAfterRepeat = await readFile(excludePath, "utf8");
-    assert(countOccurrences(excludeAfterRepeat, "# TaskSmith per-run local setup files") === 1, "per-run exclude block should be idempotent");
+    assert(countOccurrences(excludeAfterRepeat, "# TaskSmith per-run local setup files") === 1, "per-run exclude block should be idempotent under repeated and concurrent calls");
 
     const status = await gitOutput(["status", "--porcelain=v1", "--untracked-files=all"], run1.paths.workspaceDir);
     assert(status.includes("WORKTREE_CHANGE.txt"), "delivery git status should see workspace changes");

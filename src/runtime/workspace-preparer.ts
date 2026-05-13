@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { appendFile, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { NormalizedRunEvent, RepositoryConfig, RunPaths, RunRecord, VerificationCommandConfig } from "../domain/types.js";
@@ -267,7 +267,10 @@ async function ensureWorktreeCache(
 }
 
 async function acquireCacheLock(cacheDir: string): Promise<() => Promise<void>> {
-  const lockDir = `${cacheDir}.lock`;
+  return acquireDirectoryLock(`${cacheDir}.lock`);
+}
+
+async function acquireDirectoryLock(lockDir: string): Promise<() => Promise<void>> {
   const deadline = Date.now() + 120_000;
   while (true) {
     try {
@@ -277,7 +280,7 @@ async function acquireCacheLock(cacheDir: string): Promise<() => Promise<void>> 
       };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      if (Date.now() > deadline) throw new Error(`timed out waiting for git cache lock: ${lockDir}`);
+      if (Date.now() > deadline) throw new Error(`timed out waiting for lock: ${lockDir}`);
       await delay(100);
     }
   }
@@ -291,7 +294,24 @@ export async function excludeLocalSetupFiles(paths: RunPaths): Promise<void> {
   await mkdir(path.dirname(excludePath), { recursive: true });
   const existing = await readOptionalFile(excludePath);
   if (existing.includes(TASKSMITH_EXCLUDE_MARKER)) return;
-  await appendFile(excludePath, TASKSMITH_EXCLUDE_BLOCK, "utf8");
+
+  const releaseLock = await acquireDirectoryLock(`${excludePath}.tasksmith.lock`);
+  try {
+    const latest = await readOptionalFile(excludePath);
+    if (latest.includes(TASKSMITH_EXCLUDE_MARKER)) return;
+    try {
+      await writeFile(excludePath, TASKSMITH_EXCLUDE_BLOCK, { encoding: "utf8", flag: "a" });
+    } catch (error) {
+      try {
+        if ((await readOptionalFile(excludePath)).includes(TASKSMITH_EXCLUDE_MARKER)) return;
+      } catch {
+        // Preserve the append failure when the follow-up read cannot determine whether another process added the block.
+      }
+      throw error;
+    }
+  } finally {
+    await releaseLock();
+  }
 }
 
 async function readOptionalFile(filePath: string): Promise<string> {
