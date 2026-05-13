@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { RunPaths, RunRecord } from "../src/domain/types.js";
-import { WorkspacePreparer } from "../src/runtime/workspace-preparer.js";
+import { WorkspacePreparer, excludeLocalSetupFiles } from "../src/runtime/workspace-preparer.js";
 
 async function main(): Promise<void> {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "tasksmith-worktree-e2e-"));
@@ -46,6 +46,9 @@ async function main(): Promise<void> {
     const excludePath = path.resolve(run1.paths.workspaceDir, await gitOutput(["rev-parse", "--git-path", "info/exclude"], run1.paths.workspaceDir));
     const exclude = await readFile(excludePath, "utf8");
     assert(exclude.includes(".env.*") && exclude.includes("node_modules/"), "per-run exclude should protect local setup files");
+    await excludeLocalSetupFiles(run1.paths);
+    const excludeAfterRepeat = await readFile(excludePath, "utf8");
+    assert(countOccurrences(excludeAfterRepeat, "# TaskSmith per-run local setup files") === 1, "per-run exclude block should be idempotent");
 
     const status = await gitOutput(["status", "--porcelain=v1", "--untracked-files=all"], run1.paths.workspaceDir);
     assert(status.includes("WORKTREE_CHANGE.txt"), "delivery git status should see workspace changes");
@@ -128,6 +131,10 @@ async function git(args: string[], cwd: string): Promise<{ stdout: string; stder
     });
     child.on("error", reject);
   });
+}
+
+function countOccurrences(text: string, needle: string): number {
+  return text.split(needle).length - 1;
 }
 
 function assert(condition: boolean, message: string): asserts condition {

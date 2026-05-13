@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { appendFile, mkdir, rm, stat, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { NormalizedRunEvent, RepositoryConfig, RunPaths, RunRecord, VerificationCommandConfig } from "../domain/types.js";
@@ -96,7 +96,17 @@ export class WorkspacePreparer {
     await emit({ type: "command_output", command: "git fetch", output: formatCloneOutput(fetchResult), isError: fetchResult.exitCode !== 0 });
     if (fetchResult.exitCode !== 0) throw new Error(`git fetch failed for ${run.repoKey}: ${summarizeFailure(fetchResult)}`);
 
-    await runCommand("git", ["worktree", "prune"], cacheDir, gitEnv(repo));
+    await emit({ type: "command", command: "git worktree prune" });
+    const pruneResult = await runCommand("git", ["worktree", "prune"], cacheDir, gitEnv(repo));
+    if (pruneResult.exitCode !== 0) {
+      await emit({
+        type: "command_output",
+        command: "git worktree prune",
+        output: `Warning: non-fatal git worktree prune failed for ${run.repoKey} cache ${cacheDir}: ${formatCloneOutput(pruneResult)}`,
+        isError: true,
+      });
+    }
+
     const ref = repo.defaultBranch ? `refs/remotes/origin/${repo.defaultBranch}` : "HEAD";
     await emit({ type: "command", command: `git worktree add <workspace> ${repo.defaultBranch ?? "HEAD"}` });
     const addResult = await runCommand("git", ["worktree", "add", "--detach", paths.workspaceDir, ref], cacheDir, gitEnv(repo));
@@ -273,14 +283,24 @@ async function acquireCacheLock(cacheDir: string): Promise<() => Promise<void>> 
   }
 }
 
-async function excludeLocalSetupFiles(paths: RunPaths): Promise<void> {
+const TASKSMITH_EXCLUDE_MARKER = "# TaskSmith per-run local setup files";
+const TASKSMITH_EXCLUDE_BLOCK = `\n${TASKSMITH_EXCLUDE_MARKER}\n.env\n.env.*\n!.env.example\n!.env.sample\nnode_modules/\n.pnpm-store/\n`;
+
+export async function excludeLocalSetupFiles(paths: RunPaths): Promise<void> {
   const excludePath = await gitExcludePath(paths);
   await mkdir(path.dirname(excludePath), { recursive: true });
-  await appendFile(
-    excludePath,
-    "\n# TaskSmith per-run local setup files\n.env\n.env.*\n!.env.example\n!.env.sample\nnode_modules/\n.pnpm-store/\n",
-    "utf8",
-  );
+  const existing = await readOptionalFile(excludePath);
+  if (existing.includes(TASKSMITH_EXCLUDE_MARKER)) return;
+  await appendFile(excludePath, TASKSMITH_EXCLUDE_BLOCK, "utf8");
+}
+
+async function readOptionalFile(filePath: string): Promise<string> {
+  try {
+    return await readFile(filePath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
+    throw error;
+  }
 }
 
 async function gitExcludePath(paths: RunPaths): Promise<string> {
