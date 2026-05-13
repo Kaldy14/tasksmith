@@ -3,13 +3,13 @@
 ## Current status
 
 **Stage:** Phase 8 — hardening foundation  
-**Code status:** Manual Run, verifier, bounded verifier/review/CI fix attempts, source pickup, per-repo init commands, config UI, fresh-context review, optional CodeRabbit CLI review, ready-to-review GitHub PR delivery, Postgres app state, and Better Auth UI/API protection implemented
+**Code status:** Manual Run, verifier, bounded verifier/review/CI fix attempts, source pickup, idempotent GitHub source status comments, optional GitHub issue webhook intake, durable scheduler queue, worker leases/heartbeats/recovery, global/per-repo concurrency limits, per-repo init commands, config UI, fresh-context review, optional CodeRabbit CLI review, ready-to-review GitHub PR delivery, Postgres app state, and Better Auth UI/API protection implemented
 
 **Primary next milestone:** restricted-user/container worker isolation, then deepen Jira lifecycle automation and observability.
 
-2026-05-12 dogfood note: GitHub issue pickup is being used to verify the deployed `maxReviewFixAttempts` flow is present on the server.
+2026-05-12/13 dogfood note: GitHub issue pickup has repeatedly driven TaskSmith self-changes through verification, review, review-fix attempts, and direct merge. Queue/source hardening work found and fixed real lease, timestamp, and source-comment edge cases.
 
-TaskSmith currently has durable product/architecture docs, ADRs, research references, and implementation briefs. The next work should be a technical spike, not a full app scaffold.
+TaskSmith currently has durable product/architecture docs, ADRs, research references, and implementation briefs. The next work should be hardening slices, not a broad workflow-builder rewrite.
 
 ## Original target flow
 
@@ -60,11 +60,11 @@ Jira/GitHub issue marked tasksmith
 | M1 — Pi runtime spike | `[~]` | Prove Pi SDK/RPC works on target host with persistent sessions and live controls | Can prompt, stream, steer, follow-up, abort, replay messages |
 | M2 — Manual Run MVP | `[~]` | Create manual Run, run Pi in workspace, stream UI events | Browser shows live Pi work and accepts control messages |
 | M3 — Deterministic verifier | `[~]` | Run configured checks/e2e after agent work | Verification pass/fail drives next Run state |
-| M4 — Source pickup | `[~]` | Poll GitHub/Jira, claim issue, create Run, update source | Tagged issue becomes exactly one TaskSmith Run |
+| M4 — Source pickup | `[~]` | Poll/webhook GitHub and poll Jira, claim issue, create Run, update source | Tagged issue becomes exactly one TaskSmith Run/comment across repeated events |
 | M5 — PR creation | `[~]` | Commit/push verified diff and create ready-to-review PR | PR links source issue, Run, verification, review summary |
 | M6 — Fresh-context review | `[~]` | Independent review before PR readiness | Findings are structured and severe findings block delivery |
 | M7 — CI fixup | `[~]` | Watch PR CI and fix failures | Failed CI creates bounded fix attempts |
-| M8 — Hardening | `[ ]` | Security, auth, deployment, observability | Safe enough for internal beta on real repos |
+| M8 — Hardening | `[~]` | Security, auth, queueing, deployment, observability | Safe enough for internal beta on real repos |
 
 ## M0 — Foundation docs
 
@@ -203,7 +203,7 @@ TaskSmith, not the agent, runs configured checks after implementation.
 
 ## M4 — Source pickup: GitHub Issues and Jira
 
-**Status:** `[~]` GitHub Issues and Jira pickup foundation in progress
+**Status:** `[~]` GitHub Issues hardened; Jira pickup foundation in progress
 **Type:** source integration  
 **Inspired by:** Kandev Jira JQL watches, GitHub Issues for repository-scoped intake, but with external trackers kept as source of truth
 
@@ -224,6 +224,9 @@ A GitHub issue or Jira issue matching configured readiness criteria creates exac
 - [x] Add Jira Run-link comment after successful claim.
 - [x] Implement repository routing from Jira labels via `sourceFlow.jiraRepoRouting.labels`.
 - [x] Add source-pickup e2e proving idempotent GitHub and Jira polling.
+- [x] Add idempotent GitHub source status comments with durable markers.
+- [x] Add optional signed GitHub Issues webhook intake that shares the poller claim path.
+- [x] Add webhook duplicate-delivery and webhook+poll race e2e coverage.
 - [ ] Add Jira status/label transition config.
 - [ ] Handle missing repo route by creating `waiting_for_user` Run.
 - [~] Add UI for seeing source metadata and claims: run header links source issue; claims list is API-only.
@@ -232,7 +235,8 @@ A GitHub issue or Jira issue matching configured readiness criteria creates exac
 
 - [x] Jira issue with `tasksmith` creates one Run in the source-pickup e2e.
 - [x] Duplicate polling does not duplicate Run for GitHub Issues or Jira.
-- [x] GitHub issue receives Run link comment.
+- [x] GitHub webhook duplicate deliveries and webhook+poll races do not duplicate Run/comment.
+- [x] GitHub issue receives one durable status comment that is updated with Run/final result.
 - [x] Jira receives Run link comment in the source-pickup e2e.
 - [ ] Jira status/labels reflect claimed/running/failed/pr-created.
 - [~] Repo routing works for GitHub Issues repos by configured repo and for Jira labels in e2e; real `vosime-admin`/`core-hub` auth/config still need validation.
@@ -338,9 +342,13 @@ After PR creation, TaskSmith watches CI checks and performs bounded fix attempts
 ### Tasks
 
 - [x] Add Better Auth for UI/API before exposing a real public URL.
+- [x] Add durable scheduler queue so source-created Runs are queued before execution.
+- [x] Add worker leases, heartbeats, stale lease recovery, and queue/concurrency e2e coverage.
+- [x] Add global and per-repository concurrency limits.
+- [ ] Add restricted-user/container worker isolation.
 - [ ] Add role/policy for who can steer/abort/rerun.
 - [ ] Implement secret redaction tests.
-- [ ] Review stronger sandbox isolation as a future hardening improvement; MVP runs on a dedicated TaskSmith server.
+- [ ] Review stronger sandbox isolation as a future hardening improvement; current deployment still runs Pi/tools as the TaskSmith service user on a dedicated server.
 - [ ] Add resource limits and timeouts.
 - [ ] Add artifact retention policy.
 - [ ] Add DB backup plan.
