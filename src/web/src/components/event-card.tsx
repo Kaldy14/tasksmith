@@ -141,10 +141,10 @@ function formatEventTime(iso: string): string {
 }
 
 function WorkIcon({ type }: { type: string }) {
-  if (type === "command" || type === "command_output") return <SquareTerminal className="size-3" />;
-  if (type === "tool_call" || type === "tool_result") return <Wrench className="size-3" />;
-  if (type === "session_state") return <Bot className="size-3" />;
-  return <Zap className="size-3" />;
+  if (type === "command" || type === "command_output") return <SquareTerminal className="size-3.5" />;
+  if (type === "tool_call" || type === "tool_result") return <Wrench className="size-3.5" />;
+  if (type === "session_state") return <Bot className="size-3.5" />;
+  return <Zap className="size-3.5" />;
 }
 
 function isWorkEvent(type: string): boolean {
@@ -162,11 +162,13 @@ function isWorkEvent(type: string): boolean {
   );
 }
 
-function workToneClass(type: string): string {
-  if (type === "tool_result") return "text-jade";
-  if (type === "verification" || type === "review" || type === "delivery" || type === "ci") return "text-jade";
-  if (type === "command" || type === "command_output") return "text-copper";
-  return "text-muted-foreground/75";
+function workChipClass(type: string): string {
+  if (type === "tool_result") return "bg-jade/12 text-jade";
+  if (type === "verification" || type === "review" || type === "delivery" || type === "ci")
+    return "bg-jade/12 text-jade";
+  if (type === "command" || type === "command_output") return "bg-copper/12 text-copper";
+  if (type === "tool_call") return "bg-steel/12 text-steel";
+  return "bg-accent text-muted-foreground";
 }
 
 export const EventCard = memo(function EventCard({ event }: EventCardProps) {
@@ -175,14 +177,16 @@ export const EventCard = memo(function EventCard({ event }: EventCardProps) {
 
   if (event.type === "user_message") {
     return (
-      <article className="flex justify-end py-1.5">
-        <div className="max-w-[80%] rounded-2xl rounded-br-md border border-border bg-secondary px-4 py-3">
-          <div className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground">
+      <article className="flex justify-end py-2">
+        <div className="max-w-[78%] rounded-2xl rounded-br-md border border-heat/25 bg-heat-muted px-4 py-3">
+          <div className="whitespace-pre-wrap break-words text-base leading-6 text-foreground">
             {event.data.type === "user_message" ? event.data.text : summary}
           </div>
-          <div className="mt-1.5 flex items-center justify-end gap-1.5 text-[10px] text-muted-foreground/45">
+          <div className="mt-2 flex items-center justify-end gap-1.5 text-mono-xs text-subtle-foreground">
             <MessageSquare className="size-3" />
-            {event.data.type === "user_message" ? CONTROL_TEXT[event.data.control] : label}
+            <span className="uppercase tracking-caption">
+              {event.data.type === "user_message" ? CONTROL_TEXT[event.data.control] : label}
+            </span>
             <span>{formatEventTime(event.createdAt)}</span>
           </div>
         </div>
@@ -192,12 +196,12 @@ export const EventCard = memo(function EventCard({ event }: EventCardProps) {
 
   if (event.type === "assistant_delta" || event.type === "assistant_message") {
     return (
-      <article className="group py-3">
+      <article className="group py-3.5">
         <div className="min-w-0 px-1">
-          <div className="whitespace-pre-wrap break-words text-[15px] leading-7 text-foreground/95">
+          <div className="whitespace-pre-wrap break-words text-base leading-7 text-foreground">
             {summary || "(empty response)"}
           </div>
-          <div className="mt-1.5 flex items-center gap-2 text-[10px] text-muted-foreground/35">
+          <div className="mt-2 flex items-center gap-2 text-mono-xs text-subtle-foreground">
             <Bot className="size-3" />
             <span>{formatEventTime(event.createdAt)}</span>
           </div>
@@ -209,17 +213,17 @@ export const EventCard = memo(function EventCard({ event }: EventCardProps) {
   if (isWorkEvent(event.type)) {
     return (
       <article className="py-1.5">
-        <div className="rounded-xl border border-border/55 bg-card/45 px-3 py-2.5">
-          <div className="mb-1.5 flex items-center gap-2 text-[10px] uppercase tracking-[0.14em] text-muted-foreground/55">
-            <span className={cn("grid size-5 place-items-center rounded-md bg-accent", workToneClass(event.type))}>
+        <div className="rounded-lg border border-border bg-surface-1 px-3.5 py-3">
+          <div className="mb-2 flex items-center gap-2 text-caption uppercase tracking-caption text-subtle-foreground">
+            <span className={cn("grid size-5 place-items-center rounded-md", workChipClass(event.type))}>
               <WorkIcon type={event.type} />
             </span>
-            <span>{label}</span>
-            <span className="ml-auto font-mono normal-case tracking-normal">
+            <span className="text-muted-foreground">{label}</span>
+            <span className="ml-auto font-mono text-mono-xs normal-case tracking-normal text-subtle-foreground">
               {event.sequence.toString().padStart(3, "0")}
             </span>
           </div>
-          <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words font-mono text-[12px] leading-5 text-muted-foreground/80">
+          <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words font-mono text-sm leading-5 text-muted-foreground">
             {summary}
           </pre>
         </div>
@@ -230,12 +234,12 @@ export const EventCard = memo(function EventCard({ event }: EventCardProps) {
   if (event.type === "error") {
     return (
       <article className="py-2">
-        <div className="rounded-xl border border-destructive/35 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
-          <div className="mb-1 flex items-center gap-2 text-xs font-medium">
-            <CircleAlert className="size-4" />
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3.5 py-3 text-destructive">
+          <div className="mb-1.5 flex items-center gap-2 text-caption font-medium uppercase tracking-caption">
+            <CircleAlert className="size-3.5" />
             Error
           </div>
-          <div className="whitespace-pre-wrap break-words text-xs leading-5">{summary}</div>
+          <div className="whitespace-pre-wrap break-words font-mono text-sm leading-5">{summary}</div>
         </div>
       </article>
     );
@@ -247,8 +251,8 @@ export const EventCard = memo(function EventCard({ event }: EventCardProps) {
         <span className="h-px flex-1 bg-border" />
         <span
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground/75",
-            event.type === "attempt_done" && "text-jade",
+            "inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-1 px-2.5 py-1 text-mono-xs uppercase tracking-caption text-subtle-foreground",
+            event.type === "attempt_done" && "border-jade/35 text-jade",
           )}
         >
           {event.type === "attempt_done" ? <Check className="size-3" /> : <Clock3 className="size-3" />}

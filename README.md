@@ -46,8 +46,17 @@ When starting work in this repository, read these files first:
 7. [`docs/ROADMAP.md`](./docs/ROADMAP.md) — short roadmap view.
 8. ADRs in [`docs/adr`](./docs/adr).
 
+For UI / UX work in `src/web/`, also read:
+
+1. [`PRODUCT.md`](./PRODUCT.md) — register, users, brand personality, anti-references, design principles.
+2. [`DESIGN.md`](./DESIGN.md) — visual system spec: color tokens, typography, components, motion, a11y.
+3. [`docs/UI-REDESIGN-BRIEF.md`](./docs/UI-REDESIGN-BRIEF.md) — durable file-by-file implementation brief for the approved UI overhaul.
+
 ## Documentation map
 
+- [`PRODUCT.md`](./PRODUCT.md) — strategic design context (register, users, voice, anti-references, design principles). Required reading before any UI work.
+- [`DESIGN.md`](./DESIGN.md) — visual system specification (color tokens, type scale, components, motion, accessibility). Required reading before any UI work.
+- [`docs/UI-REDESIGN-BRIEF.md`](./docs/UI-REDESIGN-BRIEF.md) — approved file-by-file UI redesign brief with acceptance criteria.
 - [`docs/CONTEXT.md`](./docs/CONTEXT.md) — goals, constraints, non-goals, terminology.
 - [`docs/RESEARCH-SUMMARY.md`](./docs/RESEARCH-SUMMARY.md) — research findings from Kandev, CodeForge, OpenHands, Sandcastle, Open Agents, Pi.
 - [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — components and data flow.

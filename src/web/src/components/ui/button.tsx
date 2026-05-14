@@ -4,20 +4,20 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-40 outline-none focus-visible:ring-2 focus-visible:ring-ring/55 focus-visible:ring-offset-0 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 cursor-pointer",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium transition-all duration-150 disabled:pointer-events-none disabled:opacity-40 outline-none focus-visible:ring-2 focus-visible:ring-heat/55 focus-visible:ring-offset-0 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 cursor-pointer",
   {
     variants: {
       variant: {
-        default: "rounded-lg bg-primary text-primary-foreground hover:bg-primary/90",
+        default: "rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.985]",
         destructive:
           "rounded-lg border border-destructive/35 bg-destructive/12 text-destructive hover:border-destructive/55 hover:bg-destructive/20",
         outline:
-          "rounded-lg border border-border bg-card text-foreground hover:border-border/90 hover:bg-accent",
+          "rounded-lg border border-border bg-surface-1 text-foreground hover:border-border-strong hover:bg-accent",
         secondary:
           "rounded-lg border border-border bg-secondary text-secondary-foreground hover:bg-secondary/75",
         ghost: "rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground",
         link: "text-foreground underline-offset-4 hover:underline",
-        heat: "rounded-lg bg-primary text-primary-foreground hover:bg-primary/90",
+        heat: "rounded-lg bg-heat text-heat-foreground hover:bg-heat/90 active:scale-[0.985] shadow-[0_0_0_1px_var(--heat-glow)]",
       },
       size: {
         default: "h-9 px-4 py-2",

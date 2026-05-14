@@ -18,10 +18,10 @@ export function EventStream({ events, emptyHint }: EventStreamProps) {
 
   return (
     <ScrollArea className="h-full">
-      <div className="flex min-h-full flex-col pb-6 pt-4">
+      <div className="flex min-h-full flex-col pb-8 pt-6">
         {events.length === 0 ? (
-          <div className="flex flex-1 items-center justify-center py-16">
-            <p className="text-sm text-muted-foreground/35">{emptyHint ?? "No events yet."}</p>
+          <div className="flex flex-1 items-center justify-center py-20">
+            <p className="text-base text-subtle-foreground">{emptyHint ?? "No events yet."}</p>
           </div>
         ) : (
           <div className="space-y-1">

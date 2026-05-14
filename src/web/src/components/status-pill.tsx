@@ -20,20 +20,20 @@ const STATUS_LABEL: Record<RunStatus, string> = {
   cancelled: "cancelled",
 };
 
-type StatusVariant = "running" | "completed" | "failed" | "waiting" | "queued";
+type StatusVariant = "working" | "attention" | "completed" | "failed" | "queued";
 
 const STATUS_TO_VARIANT = {
   queued: "queued",
-  claimed: "running",
-  preparing: "running",
-  running: "running",
-  waiting_for_control: "waiting",
-  verifying: "running",
-  fixing: "running",
-  reviewing: "running",
-  watching_ci: "running",
-  delivering: "running",
-  creating_pr: "running",
+  claimed: "working",
+  preparing: "working",
+  running: "working",
+  waiting_for_control: "attention",
+  verifying: "working",
+  fixing: "working",
+  reviewing: "working",
+  watching_ci: "working",
+  delivering: "working",
+  creating_pr: "working",
   pr_created: "completed",
   completed: "completed",
   failed: "failed",
@@ -51,18 +51,18 @@ interface StatusPillProps {
 
 export function StatusPill({ status, className }: StatusPillProps) {
   const variant = variantFor(status);
-  const isActive = variant === "running" || variant === "waiting";
+  const isLive = variant === "working" || variant === "attention";
   return (
     <Badge variant={variant} className={className}>
       <span
         className={cn(
           "h-1.5 w-1.5 rounded-full",
-          variant === "running" && "bg-steel",
+          variant === "working" && "bg-copper",
+          variant === "attention" && "bg-heat",
           variant === "completed" && "bg-jade",
           variant === "failed" && "bg-destructive",
-          variant === "waiting" && "bg-heat",
           variant === "queued" && "bg-muted-foreground",
-          isActive && "animate-pulse",
+          isLive && "motion-safe:animate-pulse",
         )}
       />
       {STATUS_LABEL[status]}

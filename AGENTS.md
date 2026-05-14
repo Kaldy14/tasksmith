@@ -13,6 +13,12 @@ Before planning or implementing, read:
 5. Relevant ADRs in `docs/adr/`
 6. Existing code and tests once code exists
 
+For UI / UX work, also read before touching `src/web/`:
+
+1. `PRODUCT.md` — strategic register, users, brand personality, anti-references, design principles.
+2. `DESIGN.md` — visual system spec (color tokens, typography, components, motion, a11y).
+3. `docs/UI-REDESIGN-BRIEF.md` — current durable implementation brief and acceptance criteria for the in-flight UI overhaul.
+
 Do not rely on previous chat context unless it has been copied into repository docs.
 
 ## Documentation standards
