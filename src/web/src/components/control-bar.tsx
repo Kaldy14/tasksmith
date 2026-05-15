@@ -9,12 +9,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import type { ControlKind, RuntimeAdapter } from "@/types";
+import type { ControlKind, RuntimeAdapter, TerminalFollowUpMode } from "@/types";
 
 interface ControlBarProps {
   adapter?: RuntimeAdapter;
   disabled?: boolean;
+  terminal?: boolean;
   onSend: (kind: ControlKind, message: string) => Promise<void>;
+  onTerminalSubmit?: (mode: TerminalFollowUpMode, message: string) => Promise<void>;
 }
 
 const CONTROL_LABEL: Record<ControlKind, string> = {
@@ -23,18 +25,30 @@ const CONTROL_LABEL: Record<ControlKind, string> = {
   prompt: "Prompt",
 };
 
-export function ControlBar({ adapter, disabled, onSend }: ControlBarProps) {
+const TERMINAL_LABEL: Record<TerminalFollowUpMode, string> = {
+  same_run: "Continue run",
+  new_run: "New chat",
+};
+
+export function ControlBar({ adapter, disabled, terminal = false, onSend, onTerminalSubmit }: ControlBarProps) {
   const [kind, setKind] = useState<ControlKind>("steer");
+  const [terminalMode, setTerminalMode] = useState<TerminalFollowUpMode>("same_run");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
   async function submit(e: FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
-    if (!message.trim() || busy) return;
+    const trimmed = message.trim();
+    if (!trimmed || busy) return;
     setBusy(true);
     try {
-      await onSend(kind, message);
+      if (terminal) {
+        if (!onTerminalSubmit) return;
+        await onTerminalSubmit(terminalMode, trimmed);
+      } else {
+        await onSend(kind, trimmed);
+      }
       setMessage("");
     } finally {
       setBusy(false);
@@ -60,12 +74,13 @@ export function ControlBar({ adapter, disabled, onSend }: ControlBarProps) {
     >
       <div className="rounded-[15px] bg-surface-2">
         <textarea
+          id="run-control-message"
           name="message"
           autoComplete="off"
           required
           rows={3}
           disabled={disabled || busy}
-          placeholder="Steer the agent, ask a follow-up, or paste a new prompt"
+          placeholder={terminal ? "Describe the follow-up. Continue this run or start a linked chat." : "Steer the agent, ask a follow-up, or paste a new prompt"}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={onKeyDown}
@@ -76,20 +91,40 @@ export function ControlBar({ adapter, disabled, onSend }: ControlBarProps) {
           )}
         />
         <div className="flex min-w-0 items-center gap-2 px-3 pb-3">
-          <Select value={kind} onValueChange={(v) => setKind(v as ControlKind)} disabled={disabled}>
-            <SelectTrigger
-              aria-label="Control kind"
-              className="h-8 w-auto shrink-0 gap-2 border-0 bg-transparent px-2 text-caption font-medium uppercase tracking-caption shadow-none hover:bg-accent focus:border-0 focus:ring-0"
+          {terminal ? (
+            <Select
+              value={terminalMode}
+              onValueChange={(v) => setTerminalMode(v as TerminalFollowUpMode)}
+              disabled={disabled}
             >
-              <MessageSquare className="size-3.5 text-muted-foreground" />
-              <SelectValue>{CONTROL_LABEL[kind]}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="steer">Steer</SelectItem>
-              <SelectItem value="follow_up">Follow-up</SelectItem>
-              <SelectItem value="prompt">Prompt</SelectItem>
-            </SelectContent>
-          </Select>
+              <SelectTrigger
+                aria-label="Follow-up mode"
+                className="h-8 w-auto shrink-0 gap-2 border-0 bg-transparent px-2 text-caption font-medium uppercase tracking-caption shadow-none hover:bg-accent focus:border-0 focus:ring-0"
+              >
+                <MessageSquare className="size-3.5 text-muted-foreground" />
+                <SelectValue>{TERMINAL_LABEL[terminalMode]}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="same_run">Continue run</SelectItem>
+                <SelectItem value="new_run">New chat</SelectItem>
+              </SelectContent>
+            </Select>
+          ) : (
+            <Select value={kind} onValueChange={(v) => setKind(v as ControlKind)} disabled={disabled}>
+              <SelectTrigger
+                aria-label="Control kind"
+                className="h-8 w-auto shrink-0 gap-2 border-0 bg-transparent px-2 text-caption font-medium uppercase tracking-caption shadow-none hover:bg-accent focus:border-0 focus:ring-0"
+              >
+                <MessageSquare className="size-3.5 text-muted-foreground" />
+                <SelectValue>{CONTROL_LABEL[kind]}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="steer">Steer</SelectItem>
+                <SelectItem value="follow_up">Follow-up</SelectItem>
+                <SelectItem value="prompt">Prompt</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
 
           <span className="hidden h-4 w-px bg-border sm:block" />
           <span className="hidden items-center gap-1.5 rounded-md px-2 py-1 text-caption text-subtle-foreground sm:inline-flex">
@@ -111,7 +146,7 @@ export function ControlBar({ adapter, disabled, onSend }: ControlBarProps) {
             size="icon"
             disabled={disabled || busy || !message.trim()}
             className="size-9 rounded-full"
-            aria-label="Send message"
+            aria-label={terminal ? "Send follow-up" : "Send message"}
           >
             <ArrowUp className="size-4" />
           </Button>

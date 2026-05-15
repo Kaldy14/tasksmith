@@ -1,4 +1,5 @@
-import type { ControlKind, NormalizedRunEvent, PullRequestRecord, RepositoryConfig, ReviewFinding, ReviewRecord, ReviewSeverity, RunPaths, RunRecord, RuntimeHandle, SingleTaskWorkflowConfig, StoredRunEvent } from "../domain/types.js";
+import { randomUUID } from "node:crypto";
+import type { ControlKind, NormalizedRunEvent, PullRequestRecord, RepositoryConfig, ReviewFinding, ReviewRecord, ReviewSeverity, RunLease, RunPaths, RunRecord, RuntimeHandle, SingleTaskWorkflowConfig, StoredRunEvent } from "../domain/types.js";
 import type { FileStore } from "../storage/file-store.js";
 import type { EventHub } from "../server/event-hub.js";
 import type { PullRequestDelivery } from "../delivery/pull-request-delivery.js";
@@ -10,6 +11,8 @@ import { DemoRuntime, type RuntimeSink } from "./demo-adapter.js";
 import { PiRuntime } from "./pi-adapter.js";
 import { WorkspacePreparer } from "./workspace-preparer.js";
 import { parseGitHubIssueNumber, upsertGitHubSourceStatusComment } from "../sources/github-status-comment.js";
+import { loadJiraClientConfig } from "../sources/jira-client.js";
+import { upsertFreshJiraStatusComment } from "../sources/jira-status-comment.js";
 
 type StartableRuntime = RuntimeHandle & { start(): Promise<void> };
 
@@ -65,6 +68,38 @@ export class RuntimeManager {
     }
   }
 
+  async reopenRun(runId: string, message: string): Promise<RunRecord> {
+    const run = await this.requireRun(runId);
+    if (this.active.has(runId)) throw new Error("Run is already active; send a normal chat control instead.");
+    if (!isTerminalRunStatus(run.status)) throw new Error(`Run is not terminal; current status is ${run.status}.`);
+
+    const nextAttempt = parseAttemptNumber(run.currentAttemptId) + 1;
+    const workerId = `manual-reopen-${process.pid}-${randomUUID().slice(0, 8)}`;
+    const lease = createRunLease(workerId, this.leaseTimeoutMs, nextAttempt);
+    const followUpPrompt = buildOperatorFollowUpPrompt(run, message, nextAttempt);
+
+    const updated = await this.store.rewriteRun(runId, (current) => {
+      const { error: _error, finishedAt: _finishedAt, lease: _oldLease, ...rest } = current;
+      return {
+        ...rest,
+        status: "fixing",
+        currentAttemptId: `attempt-${nextAttempt}`,
+        prompt: `${current.prompt}\n\nTaskSmith operator follow-up:\n${followUpPrompt}`,
+        lease,
+      };
+    });
+
+    await this.store.appendControlEvent(runId, { type: "reopen", kind: "follow_up", message });
+    await this.emit(runId, { type: "user_message", control: "follow_up", text: message, delivery: "received" });
+    await this.emit(runId, { type: "run_status", status: "fixing", detail: `Operator follow-up started as ${updated.currentAttemptId}; reusing the existing workspace.` });
+    await this.emit(runId, { type: "user_message", control: "follow_up", text: message, delivery: "forwarded" });
+    setTimeout(() => {
+      void this.runAttempt(updated, this.store.pathsForRun(updated.id), this.createSink(updated), { prepareWorkspace: false, workerId });
+    }, 0).unref();
+    await this.emit(runId, { type: "user_message", control: "follow_up", text: message, delivery: "accepted" });
+    return updated;
+  }
+
   async abortRun(runId: string): Promise<void> {
     const runtime = this.active.get(runId);
     await this.store.appendControlEvent(runId, { type: "abort" });
@@ -98,9 +133,12 @@ export class RuntimeManager {
       }
       const latest = await this.requireRun(run.id);
       if (latest.status === "cancelled") return;
-      runtime = latest.adapter === "demo" ? new DemoRuntime(latest, sink, paths) : new PiRuntime(latest, paths, this.store, sink);
+      const runtimeStatus = latest.status === "fixing" ? "fixing" : "running";
+      const runtimeRun = await this.store.updateRun(run.id, { status: runtimeStatus });
+      runtime = runtimeRun.adapter === "demo" ? new DemoRuntime(runtimeRun, sink, paths) : new PiRuntime(runtimeRun, paths, this.store, sink);
       this.active.set(run.id, runtime);
-      await this.emit(run.id, { type: "run_status", status: latest.status === "fixing" ? "fixing" : "preparing", detail: `Starting ${latest.adapter} runtime` });
+      await this.emit(run.id, { type: "run_status", status: runtimeStatus, detail: `Starting ${runtimeRun.adapter} runtime` });
+      void this.updateJiraProgressStatus(run.id);
       await runtime.start();
     } catch (error: unknown) {
       await sink.setFailed(error instanceof Error ? error.message : String(error));
@@ -138,6 +176,7 @@ export class RuntimeManager {
     await this.store.updateRun(runId, { status: "verifying" });
     await this.emit(runId, { type: "attempt_done", status: "completed", summary: implementationSummary });
     await this.emit(runId, { type: "run_status", status: "verifying", detail: "Running deterministic verification" });
+    void this.updateJiraProgressStatus(runId, "Running deterministic verification");
 
     const run = await this.requireRun(runId);
     const result = await this.verifier.verify(run, this.store.pathsForRun(runId), async (event) => {
@@ -193,6 +232,7 @@ export class RuntimeManager {
   private async reviewVerifiedRun(runId: string, verificationSummary: string): Promise<void> {
     await this.store.updateRun(runId, { status: "reviewing" });
     await this.emit(runId, { type: "run_status", status: "reviewing", detail: "Running fresh-context review" });
+    void this.updateJiraProgressStatus(runId, "Running fresh-context review");
 
     const run = await this.requireRun(runId);
     const reviewInput = await this.reviewer.review(run, this.store.pathsForRun(runId), async (event) => {
@@ -263,6 +303,7 @@ export class RuntimeManager {
     const deliveryStatus = workflow.deliveryMode === "ready_pr" ? "creating_pr" : "delivering";
     await this.store.updateRun(runId, { status: deliveryStatus });
     await this.emit(runId, { type: "run_status", status: deliveryStatus, detail: "Preparing delivery" });
+    void this.updateJiraProgressStatus(runId, "Preparing delivery");
 
     try {
       const latest = await this.requireRun(runId);
@@ -290,6 +331,7 @@ export class RuntimeManager {
     if (isTerminalRunStatus(run.status)) return;
     await this.store.updateRun(runId, { status: "watching_ci" });
     await this.emit(runId, { type: "run_status", status: "watching_ci", detail: "Polling PR CI checks" });
+    void this.updateJiraProgressStatus(runId, "Polling PR CI checks");
 
     const ciResult = await this.ciWatcher.watchPullRequest(run, pullRequest, async (event) => {
       await this.emit(runId, event);
@@ -342,21 +384,66 @@ export class RuntimeManager {
     return true;
   }
 
-  private async updateFailedSourceStatus(run: RunRecord | undefined, detail: string): Promise<void> {
-    if (!run?.source || run.source.type !== "github_issue") return;
-    const provider = this.repositories[run.repoKey]?.gitProvider;
-    if (!provider || provider.type !== "github") return;
-    const issueNumber = parseGitHubIssueNumber(run.source.key);
-    if (issueNumber === undefined) return;
+  private async updateJiraProgressStatus(runId: string, detail?: string): Promise<void> {
     try {
-      await upsertGitHubSourceStatusComment(provider, issueNumber, {
-        claimKey: run.claimKey ?? `github:${run.source.key}`,
+      const run = await this.store.getRun(runId);
+      if (!run?.source || run.source.type !== "jira") return;
+      const issueKey = run.source.key;
+      await upsertFreshJiraStatusComment(loadJiraClientConfig(), issueKey, async () => this.buildJiraStatusCommentInput(issueKey, detail));
+    } catch {
+      // Jira progress comments are best-effort and must never affect run execution.
+    }
+  }
+
+  private async buildJiraStatusCommentInput(issueKey: string, detail?: string) {
+    const claims = (await this.store.listSourceClaims()).filter((claim) => claim.provider === "jira" && claim.sourceKey === issueKey);
+    const runIds = new Set(claims.map((claim) => claim.runId).filter((runId): runId is string => runId !== undefined));
+    const runs = (await this.store.listRuns())
+      .filter((run) => runIds.has(run.id))
+      .map((run) => ({
         runId: run.id,
         repoKey: run.repoKey,
-        publicBaseUrl: this.publicBaseUrl,
-        status: "failed",
-        detail,
-      });
+        status: run.status,
+        ...(run.pullRequest?.url ? { pullRequestUrl: run.pullRequest.url } : {}),
+      }));
+    return {
+      issueKey,
+      publicBaseUrl: this.publicBaseUrl,
+      claims,
+      runs,
+      ...(detail ? { detail } : {}),
+    };
+  }
+
+  private async updateFailedSourceStatus(run: RunRecord | undefined, detail: string): Promise<void> {
+    if (!run?.source) return;
+    if (run.claimKey) {
+      try {
+        await this.store.updateSourceClaim(run.claimKey, { status: "failed", error: detail });
+      } catch {
+        // Source claim status is best-effort for terminal failures.
+      }
+    }
+    try {
+      if (run.source.type === "github_issue") {
+        const provider = this.repositories[run.repoKey]?.gitProvider;
+        if (!provider || provider.type !== "github") return;
+        const issueNumber = parseGitHubIssueNumber(run.source.key);
+        if (issueNumber === undefined) return;
+        await upsertGitHubSourceStatusComment(provider, issueNumber, {
+          claimKey: run.claimKey ?? `github:${run.source.key}`,
+          runId: run.id,
+          repoKey: run.repoKey,
+          publicBaseUrl: this.publicBaseUrl,
+          status: "failed",
+          detail,
+        });
+        return;
+      }
+      if (run.source.type === "jira") {
+        const issueKey = run.source.key;
+        await upsertFreshJiraStatusComment(loadJiraClientConfig(), issueKey, async () => this.buildJiraStatusCommentInput(issueKey, `${run.repoKey} failed: ${detail}`));
+      }
     } catch {
       // Source status comments are best-effort and must not mask the terminal run failure.
     }
@@ -390,6 +477,38 @@ function parseAttemptNumber(attemptId: string): number {
   const match = /^attempt-(\d+)$/.exec(attemptId);
   if (!match) return 1;
   return Number.parseInt(match[1] ?? "1", 10);
+}
+
+function createRunLease(workerId: string, leaseTimeoutMs: number, attempt: number): RunLease {
+  const now = new Date().toISOString();
+  return {
+    workerId,
+    expiresAt: addMs(now, leaseTimeoutMs),
+    lastHeartbeatAt: now,
+    attempt,
+  };
+}
+
+function addMs(iso: string, ms: number): string {
+  return new Date(new Date(iso).getTime() + ms).toISOString();
+}
+
+function buildOperatorFollowUpPrompt(run: RunRecord, message: string, attempt: number): string {
+  return [
+    `Previous run: ${run.id}`,
+    `Previous status: ${run.status}`,
+    `Attempt: attempt-${attempt}`,
+    `Repository: ${run.repoKey}`,
+    run.pullRequest ? `Existing pull request: ${run.pullRequest.url}` : "Existing pull request: none recorded",
+    run.sessionId ? `Previous Pi session: ${run.sessionId}` : "Previous Pi session: not recorded",
+    "",
+    "Continue in the existing TaskSmith workspace. Inspect the current workspace state before editing.",
+    "Preserve previous work unless this follow-up explicitly asks to change it.",
+    "Make the smallest correct change, then stop. Do not create or merge a pull request; TaskSmith handles delivery after verification and review.",
+    "",
+    "Operator follow-up request:",
+    message,
+  ].join("\n");
 }
 
 const BLOCKING_REVIEW_SEVERITIES = new Set<ReviewSeverity>(["high", "critical"]);

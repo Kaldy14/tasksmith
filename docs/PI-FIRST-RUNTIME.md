@@ -156,7 +156,8 @@ Verification commands that will be run after your implementation:
 |---|---|---|
 | Send message while idle | `prompt` | Start new prompt/turn |
 | Send steering while running | `steer` | Delivered after current tool calls before next LLM call |
-| Queue extra work | `follow_up` | Delivered when agent finishes current task |
+| Queue extra work while active | `follow_up` | Delivered when agent finishes current task |
+| Follow up after terminal Run | `reopen` | Persist the control message, create a new attempt in the same workspace, reopen the stored Pi session when available, then prompt Pi again |
 | Stop | `abort` | Abort current operation |
 | Stop shell command | `abort_bash` | Abort active bash command |
 | Refresh UI | `get_messages` + event replay | Restore conversation view |

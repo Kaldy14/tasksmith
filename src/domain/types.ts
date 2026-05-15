@@ -21,6 +21,10 @@ export type RuntimeAdapter = "pi" | "demo";
 
 export type ControlKind = "prompt" | "steer" | "follow_up";
 
+export interface ReopenRunInput {
+  message: string;
+}
+
 export type RunSourceType = "manual" | "github_issue" | "jira";
 
 export interface SourceCommentSnapshot {
@@ -107,7 +111,7 @@ export interface CreateRunInput {
   claimKey?: string;
 }
 
-export type SourceClaimStatus = "claimed" | "run_created" | "failed";
+export type SourceClaimStatus = "claimed" | "run_created" | "failed" | "pr_created" | "completed";
 
 export interface SourceClaim {
   key: string;
@@ -225,6 +229,10 @@ export interface SourceFlowConfig {
 }
 
 export type GitHubWebhookConfig =
+  | { enabled: false }
+  | { enabled: true; signingKey: string };
+
+export type JiraWebhookConfig =
   | { enabled: false }
   | { enabled: true; signingKey: string };
 
@@ -400,6 +408,7 @@ export interface AppConfig {
   repositories: Record<string, RepositoryConfig>;
   sourceFlow: SourceFlowConfig;
   githubWebhooks: GitHubWebhookConfig;
+  jiraWebhooks: JiraWebhookConfig;
   workflow: SingleTaskWorkflowConfig;
   verification: VerificationConfig;
   queue: QueueLeaseConfig;

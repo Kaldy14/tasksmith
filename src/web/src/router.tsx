@@ -11,17 +11,20 @@ import {
 import { getPublicConfig } from "@/api";
 import { Anvil } from "@/components/anvil";
 import { ConfigPage } from "@/components/config-page";
+import { HomeHero } from "@/components/home-hero";
 import { LoginPage } from "@/components/login-page";
 import { ProjectRail } from "@/components/project-rail";
 import { useRuns } from "@/hooks/use-runs";
-import type { ConnectionStatus } from "@/types";
+import type { ConnectionStatus, RunRecord } from "@/types";
 
 interface ShellContextValue {
+  runs: RunRecord[];
   setConnection: (status: ConnectionStatus) => void;
   refreshRuns: () => void;
 }
 
 const ShellContext = createContext<ShellContextValue>({
+  runs: [],
   setConnection: () => {},
   refreshRuns: () => {},
 });
@@ -55,8 +58,8 @@ function RootShell() {
   }, [refresh]);
 
   const shellValue = useMemo<ShellContextValue>(
-    () => ({ setConnection, refreshRuns }),
-    [refreshRuns],
+    () => ({ runs, setConnection, refreshRuns }),
+    [refreshRuns, runs],
   );
 
   if (isLogin) return <Outlet />;
@@ -64,13 +67,7 @@ function RootShell() {
   return (
     <ShellContext.Provider value={shellValue}>
       <div className="flex h-screen min-h-0 overflow-hidden bg-background text-foreground">
-        <ProjectRail
-          runs={runs}
-          loading={loading}
-          connection={connection}
-          authEnabled={authEnabled}
-          onCreated={refreshRuns}
-        />
+        <ProjectRail runs={runs} loading={loading} connection={connection} authEnabled={authEnabled} />
         <main className="flex min-w-0 flex-1 flex-col">
           <Outlet />
         </main>
@@ -84,8 +81,11 @@ const rootRoute = createRootRoute({
 });
 
 function HomeRoute() {
-  const { setConnection, refreshRuns } = useShellContext();
-  return <Anvil runId={undefined} onConnectionChange={setConnection} onActivity={refreshRuns} />;
+  const { runs, setConnection, refreshRuns } = useShellContext();
+  useEffect(() => {
+    setConnection("idle");
+  }, [setConnection]);
+  return <HomeHero runs={runs} onCreated={refreshRuns} />;
 }
 
 function RunRoute() {

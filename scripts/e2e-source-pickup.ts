@@ -175,7 +175,7 @@ async function main(): Promise<void> {
     assert(jiraRun.source?.attachments?.some((attachment) => attachment.filename === "error-screenshot.png" && attachment.mimeType === "image/png") === true, "Jira attachment metadata should include image files");
     assertEqual(jiraRun.source?.metadata?.status, "Ready for Dev", "Jira source snapshot should include status metadata");
     assertEqual(jiraRun.source?.metadata?.projectKey, "VOS", "Jira source snapshot should include project metadata");
-    assertEqual(jiraRun.claimKey, "jira:VOS-42", "Jira run claim key");
+    assertEqual(jiraRun.claimKey, "jira:VOS-42:source-jira-e2e", "Jira run claim key");
 
     const claims = await getJson<ClaimsResponse>(`${baseUrl}/api/source-claims`);
     assertEqual(claims.claims.length, 3, "claim count");
@@ -292,6 +292,7 @@ function buildFileStoreConfig(tempDir: string): AppConfig {
     repositories: {},
     sourceFlow: { readinessLabel: "tasksmith", pollIntervalSeconds: 60, jiraRepoRouting: { strategy: "label", labels: {} } },
     githubWebhooks: { enabled: false },
+    jiraWebhooks: { enabled: false },
     workflow: {
       type: "single_task_sandcastle",
       stages: ["plan", "implement", "deep_review", "fix", "deliver"],
@@ -338,6 +339,7 @@ function buildConfig(): unknown {
 }
 
 function createFakeJiraServer(comments: string[]): ReturnType<typeof createServer> {
+  let statusName = "Ready for Dev";
   return createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
     if (req.method === "POST" && url.pathname === "/rest/api/3/search/jql") {
@@ -356,7 +358,7 @@ function createFakeJiraServer(comments: string[]): ReturnType<typeof createServe
           summary: "Fix Jira-routed widget",
           description: adfDoc("Use the Jira requirements."),
           labels: ["tasksmith", "source-jira-e2e"],
-          status: { name: "Ready for Dev" },
+          status: { name: statusName },
           project: { key: "VOS" },
           issuetype: { name: "Bug" },
           components: [{ name: "Widgets" }],
@@ -366,6 +368,17 @@ function createFakeJiraServer(comments: string[]): ReturnType<typeof createServe
           ],
         },
       });
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/rest/api/3/issue/VOS-42/transitions") {
+      sendJson(res, 200, { transitions: statusName === "In Progress" ? [] : [{ id: "3", name: "Work started", to: { name: "In Progress" } }] });
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/rest/api/3/issue/VOS-42/transitions") {
+      const body = JSON.parse(await readRequestBody(req)) as unknown;
+      assert(isRecord(body) && isRecord(body.transition) && body.transition.id === "3", "Jira transition should use expected transition id");
+      statusName = "In Progress";
+      sendJson(res, 204, {});
       return;
     }
     if (req.method === "GET" && url.pathname === "/rest/api/3/issue/VOS-42/comment") {

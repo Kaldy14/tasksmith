@@ -4,19 +4,19 @@ import { ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const chipVariants = cva(
-  "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-caption uppercase tracking-caption transition-colors [&_svg]:size-3.5 [&_svg]:shrink-0",
+  "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-medium tracking-tight transition-colors [&_svg]:size-3.5 [&_svg]:shrink-0",
   {
     variants: {
       tone: {
-        muted: "bg-accent text-muted-foreground",
-        jade: "bg-jade/12 text-jade",
-        heat: "bg-heat-muted text-heat",
-        copper: "bg-copper/12 text-copper",
-        steel: "bg-steel/12 text-steel",
-        destructive: "bg-destructive/12 text-destructive",
+        muted: "border-border bg-accent text-muted-foreground",
+        jade: "border-jade/30 bg-jade/15 text-jade",
+        heat: "border-heat/35 bg-heat-muted text-heat",
+        copper: "border-copper/30 bg-copper/15 text-copper",
+        steel: "border-steel/30 bg-steel/15 text-steel",
+        destructive: "border-destructive/35 bg-destructive/15 text-destructive",
       },
       interactive: {
-        true: "cursor-pointer hover:brightness-110",
+        true: "cursor-pointer hover:border-border-strong hover:brightness-110",
         false: "",
       },
     },

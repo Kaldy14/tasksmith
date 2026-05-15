@@ -399,6 +399,27 @@ export class FileStore {
     return updated;
   }
 
+  async rewriteRun(runId: string, updater: (run: RunRecord) => RunRecord): Promise<RunRecord> {
+    if (this.metadataIndex) {
+      const run = await this.metadataIndex.getRun(runId);
+      if (!run) throw new Error(`Run not found: ${runId}`);
+      const updated = normalizeLeaseForStatus({ ...updater(run), id: run.id, createdAt: run.createdAt, updatedAt: this.now() });
+      await this.writeMetadata(updated);
+      await this.metadataIndex.upsertRun(updated, this.pathsForRun(updated.id));
+      return updated;
+    }
+    let updated: RunRecord | undefined;
+    const updatedAt = this.now();
+    await this.mutateRuns((runs) => runs.map((run) => {
+      if (run.id !== runId) return run;
+      updated = normalizeLeaseForStatus({ ...updater(run), id: run.id, createdAt: run.createdAt, updatedAt });
+      return updated;
+    }));
+    if (!updated) throw new Error(`Run not found: ${runId}`);
+    await this.writeMetadata(updated);
+    return updated;
+  }
+
   async appendRawEvent(runId: string, value: unknown): Promise<void> {
     const paths = this.pathsForRun(runId);
     await this.enqueue(runId, async () => {

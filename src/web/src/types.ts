@@ -17,6 +17,7 @@ export type RunStatus =
 
 export type RuntimeAdapter = "pi" | "demo";
 export type ControlKind = "prompt" | "steer" | "follow_up";
+export type TerminalFollowUpMode = "same_run" | "new_run";
 
 export type RunSourceType = "manual" | "github_issue" | "jira";
 

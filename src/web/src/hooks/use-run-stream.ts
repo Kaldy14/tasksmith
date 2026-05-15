@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { abortRun, getRun, getRunEvents, sendControl, streamUrl } from "@/api";
+import { abortRun, getRun, getRunEvents, reopenRun, sendControl, streamUrl } from "@/api";
 import type { ConnectionStatus, ControlKind, RunRecord, StoredRunEvent } from "@/types";
 
 interface UseRunStreamResult {
@@ -8,6 +8,7 @@ interface UseRunStreamResult {
   connection: ConnectionStatus;
   error: string | undefined;
   send: (kind: ControlKind, message: string) => Promise<void>;
+  reopen: (message: string) => Promise<RunRecord | undefined>;
   abort: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -103,7 +104,7 @@ export function useRunStream(
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : String(err));
-          setConnection("offline");
+          setConnection("idle");
         }
       }
     })();
@@ -123,12 +124,22 @@ export function useRunStream(
     [runId],
   );
 
+  const reopen = useCallback(
+    async (message: string) => {
+      if (!runId) return undefined;
+      const reopened = await reopenRun(runId, message);
+      setRun(reopened);
+      return reopened;
+    },
+    [runId],
+  );
+
   const abort = useCallback(async () => {
     if (!runId) return;
     await abortRun(runId);
   }, [runId]);
 
-  return { run, events, connection, error, send, abort, refresh };
+  return { run, events, connection, error, send, reopen, abort, refresh };
 }
 
 function shouldRefreshRun(event: StoredRunEvent): boolean {

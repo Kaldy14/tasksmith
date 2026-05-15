@@ -1,9 +1,20 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "@tanstack/react-router";
-import { ChevronDown, ChevronRight, Folder, LogOut, Plus, Settings, Wifi } from "lucide-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  ArrowRight,
+  ChevronDown,
+  ChevronRight,
+  Folder,
+  LogOut,
+  Plus,
+  Settings,
+} from "lucide-react";
 import { authClient } from "@/auth-client";
-import { IntakeForm } from "./intake-form";
+import { BrandMark } from "@/components/brand-mark";
+import { ConnectionChip, type ConnectionState } from "@/components/connection-chip";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { SectionLabel } from "@/components/ui/section-label";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import type { ConnectionStatus, RunRecord, RunStatus } from "@/types";
 
@@ -12,7 +23,6 @@ interface ProjectRailProps {
   loading: boolean;
   connection: ConnectionStatus;
   authEnabled: boolean;
-  onCreated: () => void;
 }
 
 interface ProjectGroup {
@@ -21,14 +31,18 @@ interface ProjectGroup {
   liveCount: number;
 }
 
-const ACTIVE: RunStatus[] = ["running", "claimed", "preparing", "waiting_for_control", "verifying", "fixing", "reviewing", "watching_ci", "delivering", "creating_pr"];
-
-const CONNECTION_LABEL: Record<ConnectionStatus, string> = {
-  idle: "idle",
-  connecting: "connecting",
-  online: "live",
-  offline: "offline",
-};
+const ACTIVE: RunStatus[] = [
+  "claimed",
+  "preparing",
+  "running",
+  "waiting_for_control",
+  "verifying",
+  "fixing",
+  "reviewing",
+  "watching_ci",
+  "delivering",
+  "creating_pr",
+];
 
 function groupByProject(runs: RunRecord[]): ProjectGroup[] {
   const map = new Map<string, RunRecord[]>();
@@ -41,24 +55,26 @@ function groupByProject(runs: RunRecord[]): ProjectGroup[] {
   return Array.from(map.entries())
     .map(([key, threads]) => ({
       key,
-      threads: [...threads].sort(
-        (a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0),
-      ),
-      liveCount: threads.filter((t) => ACTIVE.includes(t.status)).length,
+      threads: [...threads].sort((a, b) => {
+        const aLive = ACTIVE.includes(a.status);
+        const bLive = ACTIVE.includes(b.status);
+        if (aLive !== bLive) return aLive ? -1 : 1;
+        return (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0);
+      }),
+      liveCount: threads.filter((thread) => ACTIVE.includes(thread.status)).length,
     }))
     .sort((a, b) => {
-      const aMax = Math.max(...a.threads.map((t) => Date.parse(t.updatedAt) || 0));
-      const bMax = Math.max(...b.threads.map((t) => Date.parse(t.updatedAt) || 0));
+      if (a.liveCount !== b.liveCount) return b.liveCount - a.liveCount;
+      const aMax = Math.max(...a.threads.map((thread) => Date.parse(thread.updatedAt) || 0));
+      const bMax = Math.max(...b.threads.map((thread) => Date.parse(thread.updatedAt) || 0));
       return bMax - aMax;
     });
 }
 
-export function ProjectRail({ runs, loading, connection, authEnabled, onCreated }: ProjectRailProps) {
+export function ProjectRail({ runs, loading, connection, authEnabled }: ProjectRailProps) {
   const params = useParams({ strict: false }) as { runId?: string };
   const selected = params.runId;
-  const [showIntake, setShowIntake] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-
   const groups = useMemo(() => groupByProject(runs), [runs]);
 
   function toggle(key: string): void {
@@ -66,74 +82,77 @@ export function ProjectRail({ runs, loading, connection, authEnabled, onCreated 
   }
 
   return (
-    <aside className="flex w-[296px] shrink-0 flex-col border-r border-border bg-card text-foreground">
-      <div className="flex h-14 shrink-0 items-center px-4">
-        <Link to="/" className="min-w-0 truncate text-sm font-semibold tracking-tight text-foreground">
-          TaskSmith
+    <aside className="flex w-[272px] shrink-0 flex-col border-r border-border bg-surface-1 text-foreground">
+      <div className="flex h-14 shrink-0 items-center px-3">
+        <Link
+          to="/"
+          className="group flex min-w-0 items-center gap-2.5 rounded-lg px-1.5 py-1 text-sm font-semibold tracking-tight text-foreground transition-colors hover:bg-accent"
+        >
+          <BrandMark size="sm" />
+          <span className="truncate">TaskSmith</span>
         </Link>
       </div>
 
-      <div className="flex items-center justify-between px-4 pb-2 pt-4">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">
-          Projects
-        </span>
-        <button
-          type="button"
-          className="grid size-6 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
-          aria-label="New run"
-          onClick={() => setShowIntake((v) => !v)}
+      <div className="px-3 pb-2 pt-4">
+        <SectionLabel
+          trailing={
+            <Button asChild variant="ghost" size="icon" className="size-7">
+              <Link to="/" aria-label="Start a new run">
+                <Plus className="size-3.5" />
+              </Link>
+            </Button>
+          }
         >
-          <Plus className="size-3.5" />
-        </button>
+          Projects
+        </SectionLabel>
       </div>
-
-      {showIntake ? (
-        <div className="mx-3 mb-3 rounded-xl border border-border bg-background/45 p-3">
-          <IntakeForm
-            onCreated={() => {
-              setShowIntake(false);
-              onCreated();
-            }}
-          />
-        </div>
-      ) : null}
 
       <ScrollArea className="min-h-0 flex-1">
         <div className="px-2 pb-3">
           {loading && groups.length === 0 ? (
-            <p className="px-2 py-3 text-xs text-muted-foreground">Loading...</p>
+            <LoadingRows />
           ) : groups.length === 0 ? (
-            <p className="px-2 py-3 text-xs text-muted-foreground">No threads yet.</p>
+            <Link
+              to="/"
+              className="mx-1 flex items-center gap-1.5 rounded-lg px-2 py-3 text-sm text-subtle-foreground transition-colors hover:bg-accent hover:text-heat"
+            >
+              <span>No threads yet — start one above.</span>
+              <ArrowRight className="size-3.5" />
+            </Link>
           ) : (
-            groups.map((g) => {
-              const isCollapsed = collapsed[g.key] ?? false;
+            groups.map((group) => {
+              const isCollapsed = collapsed[group.key] ?? false;
               return (
-                <div key={g.key} className="mb-2">
+                <div key={group.key} className="mb-2">
                   <button
                     type="button"
-                    onClick={() => toggle(g.key)}
+                    onClick={() => toggle(group.key)}
                     className={cn(
-                      "group flex h-8 w-full items-center gap-1.5 rounded-lg px-2 text-left text-sm",
+                      "group flex h-9 w-full items-center gap-1.5 rounded-lg px-2 text-left text-sm",
                       "text-foreground/95 transition-colors hover:bg-accent",
                     )}
                   >
                     {isCollapsed ? (
-                      <ChevronRight className="size-3.5 text-muted-foreground/65" />
+                      <ChevronRight className="size-3.5 text-subtle-foreground" />
                     ) : (
-                      <ChevronDown className="size-3.5 text-muted-foreground/65" />
+                      <ChevronDown className="size-3.5 text-subtle-foreground" />
                     )}
-                    <Folder className="size-4 shrink-0 text-muted-foreground/65" />
-                    <span className="truncate font-semibold tracking-tight">{g.key}</span>
-                    <span className="ml-auto flex items-center gap-1.5 text-[10px] text-muted-foreground/55">
-                      {g.liveCount > 0 ? (
-                        <span className="inline-block size-1.5 rounded-full bg-jade animate-pulse" />
-                      ) : null}
-                      <span>{g.threads.length}</span>
+                    <Folder className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="truncate font-semibold tracking-tight">{group.key}</span>
+                    <span
+                      className={cn(
+                        "ml-auto inline-flex min-w-5 items-center justify-center rounded-md px-1.5 py-0.5 text-caption font-medium",
+                        group.liveCount > 0
+                          ? "bg-heat-muted text-heat"
+                          : "bg-accent text-subtle-foreground",
+                      )}
+                    >
+                      {group.liveCount > 0 ? group.liveCount : group.threads.length}
                     </span>
                   </button>
                   {!isCollapsed ? (
-                    <div className="mt-0.5 space-y-0.5">
-                      {g.threads.map((run) => (
+                    <div className="mt-1 space-y-0.5">
+                      {group.threads.map((run) => (
                         <ThreadRow key={run.id} run={run} active={run.id === selected} />
                       ))}
                     </div>
@@ -145,28 +164,36 @@ export function ProjectRail({ runs, loading, connection, authEnabled, onCreated 
         </div>
       </ScrollArea>
 
-      <div className="shrink-0 space-y-2 border-t border-border/70 px-3 py-3">
-        {authEnabled ? <SessionSummary /> : null}
-        <Link
-          to="/config"
-          className="flex h-8 items-center gap-2 rounded-lg bg-accent px-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <Settings className="size-3.5" />
-          Project config
-        </Link>
-        <div
-          className={cn(
-            "flex h-8 items-center gap-2 rounded-lg px-2 text-xs",
-            connection === "online"
-              ? "bg-primary/15 text-primary"
-              : "bg-accent text-muted-foreground",
-          )}
-        >
-          <Wifi className="size-3.5" />
-          <span className="font-medium">{CONNECTION_LABEL[connection]}</span>
+      <footer className="shrink-0 border-t border-border">
+        {authEnabled ? (
+          <div className="border-b border-border px-3 py-3">
+            <SessionSummary />
+          </div>
+        ) : null}
+        <div className="border-b border-border px-3 py-2">
+          <Link
+            to="/config"
+            className="flex h-9 items-center gap-2 rounded-lg px-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <Settings className="size-3.5" />
+            Project config
+          </Link>
         </div>
-      </div>
+        <div className="px-3 py-3">
+          <ConnectionChip state={connectionState(connection)} />
+        </div>
+      </footer>
     </aside>
+  );
+}
+
+function LoadingRows() {
+  return (
+    <div className="space-y-2 px-1 py-2" aria-label="Loading runs">
+      {Array.from({ length: 3 }, (_, index) => (
+        <div key={index} className="h-9 rounded-lg bg-accent motion-safe:animate-pulse" />
+      ))}
+    </div>
   );
 }
 
@@ -174,11 +201,11 @@ function SessionSummary() {
   const session = authClient.useSession();
   if (!session.data?.user) return null;
   return (
-    <div className="flex items-center gap-2 rounded-lg bg-accent px-2 py-2 text-xs text-muted-foreground">
+    <div className="flex items-center gap-2 rounded-lg bg-accent px-2.5 py-2 text-sm text-muted-foreground">
       <span className="min-w-0 flex-1 truncate">{session.data.user.email}</span>
       <button
         type="button"
-        className="grid size-6 place-items-center rounded-md transition-colors hover:bg-background hover:text-foreground"
+        className="grid size-7 place-items-center rounded-md transition-colors hover:bg-background hover:text-foreground"
         aria-label="Sign out"
         onClick={() => {
           void authClient.signOut({
@@ -197,8 +224,8 @@ function SessionSummary() {
 }
 
 function statusDotClass(status: RunStatus): string {
-  if (status === "running" || status === "claimed" || status === "preparing" || status === "verifying" || status === "fixing" || status === "reviewing" || status === "watching_ci" || status === "delivering" || status === "creating_pr") return "bg-primary";
   if (status === "waiting_for_control") return "bg-heat";
+  if (ACTIVE.includes(status)) return "bg-copper";
   if (status === "completed" || status === "pr_created") return "bg-jade";
   if (status === "failed" || status === "cancelled") return "bg-destructive";
   return "bg-muted-foreground/50";
@@ -211,9 +238,10 @@ function ThreadRow({ run, active }: { run: RunRecord; active: boolean }) {
       to="/runs/$runId"
       params={{ runId: run.id }}
       className={cn(
-        "group flex h-8 items-center gap-2 rounded-xl pl-7 pr-2 text-left text-sm",
+        "group relative flex h-9 items-center gap-2 rounded-lg pl-7 pr-2.5 text-left text-sm",
         "text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
-        active && "bg-accent text-foreground",
+        active &&
+          "bg-surface-2 text-foreground before:absolute before:bottom-1.5 before:left-0 before:top-1.5 before:w-[2px] before:rounded-full before:bg-heat",
       )}
     >
       <span
@@ -221,18 +249,20 @@ function ThreadRow({ run, active }: { run: RunRecord; active: boolean }) {
         className={cn(
           "size-1.5 shrink-0 rounded-full",
           statusDotClass(run.status),
-          isLive && "animate-pulse",
+          isLive && "motion-safe:animate-pulse",
         )}
       />
-      <span className="min-w-0 flex-1 truncate text-xs font-medium">{run.title}</span>
-      <span
-        className={cn(
-          "shrink-0 text-[10px] tracking-tight text-muted-foreground/50",
-          active ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-        )}
-      >
+      <span className="min-w-0 flex-1 truncate font-medium">{run.title}</span>
+      <span className="shrink-0 text-caption text-subtle-foreground">
         {formatRelativeTime(run.updatedAt)}
       </span>
     </Link>
   );
+}
+
+function connectionState(status: ConnectionStatus): ConnectionState {
+  if (status === "connecting") return "connecting";
+  if (status === "online") return "connected";
+  if (status === "offline") return "disconnected";
+  return "idle";
 }

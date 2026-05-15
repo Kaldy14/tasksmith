@@ -67,6 +67,14 @@ export async function sendControl(
   });
 }
 
+export async function reopenRun(runId: string, message: string): Promise<RunRecord> {
+  const { run } = await fetchJson<{ run: RunRecord }>(`/api/runs/${encodeURIComponent(runId)}/reopen`, {
+    method: "POST",
+    body: JSON.stringify({ message }),
+  });
+  return run;
+}
+
 export async function abortRun(runId: string): Promise<void> {
   await fetchJson(`/api/runs/${encodeURIComponent(runId)}/abort`, {
     method: "POST",

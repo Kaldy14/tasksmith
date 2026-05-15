@@ -6,29 +6,31 @@ Jira should remain the primary planning and tracking system. TaskSmith should no
 
 ## Pickup model
 
-TaskSmith polls Jira using configured watches.
+TaskSmith accepts Jira issue/comment webhooks and keeps polling as a reconciliation fallback.
 
 Example JQL:
 
 ```jql
-labels = myth AND status = "Ready for AI"
+labels = tasksmith AND labels = "repo:vosime-admin" AND status = "Ready for AI"
 ```
 
-`myth` is the preferred readiness label for the next deployment. Older examples may still use `tasksmith` for local e2e fixtures; the label remains configurable through `sourceFlow.readinessLabel` and per-repo Jira `jql`.
+`tasksmith` is the readiness label for Jira-driven intake. Repository routing labels use the `repo:<repo-key>` form, for example `repo:vosime-admin` and `repo:core-hub`. The readiness label and routing label mapping remain configurable through `sourceFlow.readinessLabel`, `sourceFlow.jiraRepoRouting.labels`, and per-repo Jira `jql`.
 
-When an issue matches:
+When an issue matches, either through the polling fallback or the Jira webhook:
 
 ```txt
-1. search Jira with /rest/api/3/search/jql,
-2. fetch the issue description, labels, status/project metadata, comments, and attachment metadata,
-3. acquire claim in TaskSmith's source claim store,
-4. create Run,
-5. enqueue Run,
-6. comment on Jira with TaskSmith run URL,
-7. later transition Jira issue or add status labels when status-sync policy is implemented.
+1. fetch the issue description, labels, status/project metadata, comments, and attachment metadata,
+2. resolve one or more repositories from repo:* labels,
+3. acquire a repo-scoped claim in TaskSmith's source claim store,
+4. create one child Run per routed repository,
+5. enqueue each Run,
+6. best-effort transition the Jira issue to the configured in-progress status,
+7. upsert one durable TaskSmith status comment on Jira with rich-text links to all repository Runs,
+8. update that durable comment as Runs progress and when PRs/failures are available,
+9. best-effort transition the Jira issue to the configured review status once a ready PR is created.
 ```
 
-The search endpoint is important: `/rest/api/3/search` is deprecated/being removed in Jira Cloud, so TaskSmith uses `/rest/api/3/search/jql` for new Jira intake work.
+Polling uses `/rest/api/3/search/jql`; Jira webhooks should send issue/comment events to `/api/webhooks/jira` with the configured TaskSmith webhook secret. Polling remains a reconciliation fallback rather than the preferred low-latency trigger.
 
 ## Idempotency
 
@@ -38,9 +40,10 @@ The current foundation uses a file-backed `source-claims.json` store with unique
 
 ```txt
 source_claims
-- key text unique              # e.g. jira:VOS-42
+- key text unique              # e.g. jira:VOS-42:vosime-admin
 - provider text                # jira/github
-- source_key text
+- source_key text              # e.g. VOS-42
+- repo_key text
 - run_id uuid
 - status text
 - claimed_at timestamp
@@ -60,16 +63,17 @@ If a tracker transition succeeds but claim insert fails, the poller should detec
 
 ## Jira state sync
 
-Suggested initial Jira transitions:
+Configured Jira transitions for the Vosime deployment:
 
 ```txt
-Ready for AI
-  -> AI In Progress
-  -> AI Review / PR Created
-  -> Done or Human Review
+Ready for development
+  -> In Progress      # when TaskSmith creates a Run
+  -> Review           # when TaskSmith creates a ready PR
 ```
 
-Avoid overfitting initially. Labels can be safer than transitions while testing:
+The target status names are configurable with `TASKSMITH_JIRA_IN_PROGRESS_STATUS` and `TASKSMITH_JIRA_REVIEW_STATUS`. If a transition is unavailable, the Run continues and the source claim records the transition warning.
+
+Labels can still be safer than transitions while testing:
 
 ```txt
 tasksmith
@@ -95,14 +99,16 @@ Attachment contents are not downloaded by default yet. Image/text/PDF extraction
 
 TaskSmith should comment at key points:
 
-### Claim comment
+### Durable status comment
+
+TaskSmith maintains one durable status comment per Jira issue. Later updates edit the same comment instead of spamming the issue. The comment uses Jira rich-text links; the internal marker is not visible to users.
 
 ```md
-TaskSmith picked up this issue.
+TaskSmith status for this Jira issue.
 
-Run: <tasksmith-run-url>
-Repository: <repo>
-Agent: Pi
+Repository runs:
+- vosime-admin: AI working — Run
+- core-hub: Queued — Run
 ```
 
 ### Verification failure comment
@@ -118,7 +124,9 @@ Summary:
 <first useful error lines>
 ```
 
-### PR created comment
+### PR created update
+
+The durable status comment is updated with the PR/result summary:
 
 ```md
 TaskSmith created a ready-to-review PR:
@@ -139,7 +147,7 @@ Possible strategies:
 1. Jira component -> repo.
 2. Jira project -> repo.
 3. Jira custom field -> repo.
-4. Label -> repo, e.g. `vosime-admin`.
+4. Label -> repo, e.g. `repo:vosime-admin`.
 5. Manual human selection in TaskSmith UI before run starts.
 6. Agent inference only as a fallback, never as the primary routing mechanism.
 
@@ -152,11 +160,13 @@ labels or custom field determine repo. The label mapping must be configurable pe
 Example:
 
 ```txt
-vosime-admin
-core-hub
+repo:vosime-admin
+repo:core-hub
 ```
 
-For Jira deployments, one Jira board can route to many repositories using `sourceFlow.jiraRepoRouting.labels`, e.g. `{ "vosime-admin": "vosime-admin", "core-hub": "core-hub" }`. The current poller honors this mapping and skips a repo if the Jira issue is routed to a different repo. If no repo is resolved, a future slice should create a `waiting_for_user` Run and ask a human to select.
+For Jira deployments, one Jira board can route to many repositories using `sourceFlow.jiraRepoRouting.labels`, e.g. `{ "repo:vosime-admin": "vosime-admin", "repo:core-hub": "core-hub" }`. If a Jira issue has multiple repo labels, TaskSmith creates one child Run and one source claim per repo. If no repo is resolved, a future slice should create a `waiting_for_user` Run and ask a human to select.
+
+`@tasksmith ...` comments are treated as operator instructions. New runs include these instructions in a dedicated prompt section; webhook delivery lets these comments trigger pickup immediately while polling remains the fallback.
 
 ## Prompt safety
 

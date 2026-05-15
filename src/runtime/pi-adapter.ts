@@ -33,6 +33,9 @@ export class PiRuntime implements RuntimeHandle {
       await writeFile(path.join(this.paths.logsDir, "auth-files.json"), `${JSON.stringify({ copiedFiles }, null, 2)}\n`, "utf8");
       this.session = await this.createSession();
       const session = this.session;
+      const sessionPatch: Partial<Omit<RunRecord, "id" | "createdAt">> = { sessionId: session.sessionId };
+      if (session.sessionFile) sessionPatch.sessionFile = session.sessionFile;
+      await this.store.updateRun(this.run.id, sessionPatch);
       await this.sink.emit({
         type: "session_state",
         sessionId: session.sessionId,
@@ -111,11 +114,17 @@ export class PiRuntime implements RuntimeHandle {
       modelRegistry,
       settingsManager,
       resourceLoader,
-      sessionManager: SessionManager.create(this.paths.workspaceDir, this.paths.sessionDir),
+      sessionManager: this.createSessionManager(),
       tools: ["read", "write", "edit", "bash", "grep", "find", "ls"],
     });
     session.setSessionName(`TaskSmith ${this.run.id}`);
     return session;
+  }
+
+  private createSessionManager(): ReturnType<typeof SessionManager.create> {
+    if (this.run.sessionFile) return SessionManager.open(this.run.sessionFile, this.paths.sessionDir);
+    if (this.run.currentAttemptId !== "attempt-1") return SessionManager.continueRecent(this.paths.workspaceDir, this.paths.sessionDir);
+    return SessionManager.create(this.paths.workspaceDir, this.paths.sessionDir);
   }
 
   private requireSession(): AgentSession {

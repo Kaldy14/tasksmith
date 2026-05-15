@@ -3,7 +3,7 @@
 ## Current status
 
 **Stage:** Phase 8 — hardening foundation  
-**Code status:** Manual Run, verifier, bounded verifier/review/CI fix attempts, source pickup, idempotent GitHub source status comments, optional GitHub issue webhook intake, durable scheduler queue, worker leases/heartbeats/recovery, global/per-repo concurrency limits, per-repo init commands, config UI, fresh-context review, optional CodeRabbit CLI review, ready-to-review GitHub PR delivery, Postgres app state, and Better Auth UI/API protection implemented
+**Code status:** Manual Run, verifier, bounded verifier/review/CI fix attempts, source pickup, idempotent GitHub/Jira source status comments, optional GitHub Issues and Jira webhook intake, repo-scoped Jira child Runs, durable scheduler queue, worker leases/heartbeats/recovery, global/per-repo concurrency limits, per-repo init commands, config UI, fresh-context review, optional CodeRabbit CLI review, ready-to-review GitHub PR delivery, Postgres app state, and Better Auth UI/API protection implemented
 
 **Primary next milestone:** restricted-user/container worker isolation, then deepen Jira lifecycle automation and observability.
 
@@ -60,10 +60,10 @@ Jira/GitHub issue marked tasksmith
 | M1 — Pi runtime spike | `[~]` | Prove Pi SDK/RPC works on target host with persistent sessions and live controls | Can prompt, stream, steer, follow-up, abort, replay messages |
 | M2 — Manual Run MVP | `[~]` | Create manual Run, run Pi in workspace, stream UI events | Browser shows live Pi work and accepts control messages |
 | M3 — Deterministic verifier | `[~]` | Run configured checks/e2e after agent work | Verification pass/fail drives next Run state |
-| M4 — Source pickup | `[~]` | Poll/webhook GitHub and poll Jira, claim issue, create Run, update source | Tagged issue becomes exactly one TaskSmith Run/comment across repeated events |
+| M4 — Source pickup | `[~]` | Poll/webhook GitHub and webhook/poll Jira, claim issue, create Run, update source | Tagged issue becomes idempotent TaskSmith child Run(s)/comment across repeated events |
 | M5 — PR creation | `[~]` | Commit/push verified diff and create ready-to-review PR | PR links source issue, Run, verification, review summary |
 | M6 — Fresh-context review | `[~]` | Independent review before PR readiness | Findings are structured and severe findings block delivery |
-| M7 — CI fixup | `[~]` | Watch PR CI and fix failures | Failed CI creates bounded fix attempts |
+| M7 — post-PR fixup | `[~]` | Watch PR CI and CodeRabbit PR feedback, then fix failures/comments | Failed CI or actionable CodeRabbit review comments create bounded fix attempts |
 | M8 — Hardening | `[~]` | Security, auth, queueing, deployment, observability | Safe enough for internal beta on real repos |
 
 ## M0 — Foundation docs
@@ -157,7 +157,7 @@ Before Jira automation, manually start a Run and watch/control the Pi session fr
 - [x] Run detail page.
 - [x] Live conversation/event stream.
 - [x] Chat/control box.
-- [x] Controls for steer/follow-up/abort.
+- [x] Controls for steer/follow-up/abort and terminal-run reopen/follow-up.
 - [x] Reconnect and replay history from normalized events.
 - [ ] Debug drawer for raw events.
 
@@ -221,11 +221,14 @@ A GitHub issue or Jira issue matching configured readiness criteria creates exac
 - [x] Implement manual GitHub Issues poller endpoint for configured repos.
 - [x] Add GitHub issue Run-link comment after successful claim.
 - [x] Implement Jira poller with environment-sourced Jira credentials.
-- [x] Add Jira Run-link comment after successful claim.
-- [x] Implement repository routing from Jira labels via `sourceFlow.jiraRepoRouting.labels`.
+- [x] Add Jira Run-link/status comment after successful claim.
+- [x] Implement repository routing from Jira `repo:*` labels via `sourceFlow.jiraRepoRouting.labels`.
 - [x] Add source-pickup e2e proving idempotent GitHub and Jira polling.
 - [x] Add idempotent GitHub source status comments with durable markers.
+- [x] Add durable Jira issue-level status comments with all repo child Runs.
+- [x] Add repo-scoped Jira source claims so one Jira issue can create one child Run per repo label.
 - [x] Add optional signed GitHub Issues webhook intake that shares the poller claim path.
+- [x] Add optional signed Jira webhook intake for issue/comment events.
 - [x] Add webhook duplicate-delivery and webhook+poll race e2e coverage.
 - [ ] Add Jira status/label transition config.
 - [ ] Handle missing repo route by creating `waiting_for_user` Run.
@@ -234,10 +237,11 @@ A GitHub issue or Jira issue matching configured readiness criteria creates exac
 ### Exit gate
 
 - [x] Jira issue with `tasksmith` creates one Run in the source-pickup e2e.
+- [x] Jira issue with multiple `repo:*` labels creates one child Run per repo in the Jira webhook e2e.
 - [x] Duplicate polling does not duplicate Run for GitHub Issues or Jira.
-- [x] GitHub webhook duplicate deliveries and webhook+poll races do not duplicate Run/comment.
+- [x] GitHub/Jira webhook duplicate deliveries and webhook+poll races do not duplicate Run/comment.
 - [x] GitHub issue receives one durable status comment that is updated with Run/final result.
-- [x] Jira receives Run link comment in the source-pickup e2e.
+- [x] Jira receives one durable issue-level status comment with Run links in e2e.
 - [ ] Jira status/labels reflect claimed/running/failed/pr-created.
 - [~] Repo routing works for GitHub Issues repos by configured repo and for Jira labels in e2e; real `vosime-admin`/`core-hub` auth/config still need validation.
 
@@ -322,11 +326,13 @@ After PR creation, TaskSmith watches CI checks and performs bounded fix attempts
 - [x] Poll GitHub PR check status after ready PR creation.
 - [x] Fetch failed GitHub Actions logs via `gh run view --log-failed` when run ids are available.
 - [x] Summarize relevant failure output into a CI fix prompt.
-- [x] Create CI fixup attempt in same workspace/branch.
+- [x] Detect actionable CodeRabbit PR review comments on the current head commit before marking the Run `pr_created`; nitpick-only reviews are non-blocking by default.
+- [x] Create CI/post-PR-feedback fixup attempt in same workspace/branch.
 - [x] Push new fix commit to the existing PR branch.
 - [x] Re-poll CI after the fix commit.
 - [x] Stop after `maxCiFixAttempts` is exhausted.
 - [~] Update Jira/GitHub/UI on success/failure: UI events exist; source comments/status transitions still need production hardening.
+- [x] Delivery e2e covers CodeRabbit post-PR feedback detection and follow-up branch update.
 
 ### Exit gate
 

@@ -1,4 +1,4 @@
-import type { CreateRunInput, RuntimeAdapter, ControlKind } from "./types.js";
+import type { CreateRunInput, RuntimeAdapter, ControlKind, ReopenRunInput } from "./types.js";
 
 export function parseCreateRunInput(value: unknown): CreateRunInput {
   const record = expectRecord(value, "request body");
@@ -14,6 +14,11 @@ export function parseControlInput(value: unknown): { kind: ControlKind; message:
   const kind = parseControlKind(record.kind);
   const message = cleanString(record.message, "message", 20_000);
   return { kind, message };
+}
+
+export function parseReopenRunInput(value: unknown): ReopenRunInput {
+  const record = expectRecord(value, "request body");
+  return { message: cleanString(record.message, "message", 20_000) };
 }
 
 function parseAdapter(value: unknown): RuntimeAdapter {

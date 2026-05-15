@@ -8,11 +8,13 @@ import type {
   ReviewRecord,
   RunPaths,
   RunRecord,
+  SourceClaim,
 } from "../domain/types.js";
 import { redactForStorage } from "../domain/redaction.js";
 import type { FileStore } from "../storage/file-store.js";
 import { parseGitHubIssueNumber, upsertGitHubSourceStatusComment } from "../sources/github-status-comment.js";
-import { commentOnJiraIssue, loadJiraClientConfig } from "../sources/jira-client.js";
+import { loadJiraClientConfig, transitionJiraIssueToStatus } from "../sources/jira-client.js";
+import { upsertFreshJiraStatusComment, type JiraStatusCommentInput, type JiraStatusRunSummary } from "../sources/jira-status-comment.js";
 
 interface CommandResult {
   code: number | null;
@@ -36,6 +38,49 @@ export class PullRequestDelivery {
     private readonly config: AppConfig,
     private readonly store: FileStore,
   ) {}
+
+  private async sourceClaimsForRun(run: RunRecord): Promise<SourceClaim[]> {
+    if (!run.source) return [];
+    const claims = await this.store.listSourceClaims();
+    return claims.filter((claim) => claim.provider === run.source?.type.replace("_issue", "") && claim.sourceKey === run.source.key);
+  }
+
+  private async markSourceClaim(run: RunRecord, status: SourceClaim["status"]): Promise<void> {
+    if (!run.claimKey) return;
+    try {
+      await this.store.updateSourceClaim(run.claimKey, { status });
+    } catch {
+      // Source claim updates are best-effort; delivery result remains authoritative on the Run.
+    }
+  }
+
+  private async sourceRunSummariesForRun(run: RunRecord): Promise<JiraStatusRunSummary[]> {
+    const claims = await this.sourceClaimsForRun(run);
+    const summaries: JiraStatusRunSummary[] = [];
+    for (const claim of claims) {
+      if (!claim.runId) continue;
+      const childRun = await this.store.getRun(claim.runId);
+      const pullRequest = await this.store.getPullRequestForRun(claim.runId);
+      summaries.push({
+        runId: claim.runId,
+        repoKey: claim.repoKey,
+        status: childRun?.status ?? claim.status,
+        ...(pullRequest ? { pullRequestUrl: pullRequest.url } : {}),
+      });
+    }
+    return summaries;
+  }
+
+  private async buildJiraStatusInput(run: RunRecord, detail: string): Promise<{ issueKey: string; publicBaseUrl: string; claims: SourceClaim[]; runs: JiraStatusRunSummary[]; detail: string }> {
+    if (run.source?.type !== "jira") throw new Error("Jira status input requires a Jira source run");
+    return {
+      issueKey: run.source.key,
+      publicBaseUrl: this.config.publicBaseUrl,
+      claims: await this.sourceClaimsForRun(run),
+      runs: await this.sourceRunSummariesForRun(run),
+      detail,
+    };
+  }
 
   async deliver(run: RunRecord, paths: RunPaths, review: ReviewRecord, emit: DeliveryEmitter): Promise<DeliveryResult> {
     const repo = this.config.repositories[run.repoKey];
@@ -155,7 +200,8 @@ export class PullRequestDelivery {
       body: prBody,
     });
 
-    const sourceUpdateError = await updateSourceWithPullRequest(run, repo.gitProvider, pullRequest, review, this.config.publicBaseUrl);
+    await this.markSourceClaim(run, "pr_created");
+    const sourceUpdateError = await updateSourceWithPullRequest(run, repo.gitProvider, pullRequest, review, this.config.publicBaseUrl, (detail) => this.buildJiraStatusInput(run, detail));
     const summary = `Ready-to-review PR created: ${pullRequest.url}`;
     await emit({
       type: "delivery",
@@ -244,7 +290,8 @@ export class PullRequestDelivery {
   ): Promise<DeliveryResult> {
     const provider = repo.gitProvider?.type === "github" ? "github" : undefined;
     const commitUrl = repo.gitProvider ? buildGitHubCommitUrl(repo.gitProvider, commitSha) : undefined;
-    const sourceUpdateError = options.alreadyPushed ? undefined : await updateSourceWithSquashMerge(run, repo.gitProvider, targetBranch, commitSha, commitUrl, review, this.config.publicBaseUrl);
+    if (!options.alreadyPushed) await this.markSourceClaim(run, "completed");
+    const sourceUpdateError = options.alreadyPushed ? undefined : await updateSourceWithSquashMerge(run, repo.gitProvider, targetBranch, commitSha, commitUrl, review, this.config.publicBaseUrl, (detail) => this.buildJiraStatusInput(run, detail));
     const summary = options.alreadyPushed
       ? `Squash merge already present on ${targetBranch}: ${commitUrl ?? commitSha}`
       : `Squash-merged to ${targetBranch}: ${commitUrl ?? commitSha}`;
@@ -325,8 +372,15 @@ function buildBranchName(run: RunRecord): string {
 }
 
 function buildPullRequestTitle(run: RunRecord): string {
-  const prefix = run.source?.key ? `${run.source.key}: ` : "";
-  return `${prefix}${run.title}`.slice(0, 180);
+  const sourceKey = run.source?.key?.trim();
+  if (!sourceKey) return run.title.trim().slice(0, 180);
+  const sourcePrefixPattern = new RegExp(`^(?:${escapeRegExp(sourceKey)}\\s*[:\\-]\\s*)+`, "iu");
+  const titleWithoutDuplicateSource = run.title.trim().replace(sourcePrefixPattern, "").trim();
+  return `${sourceKey}: ${titleWithoutDuplicateSource || run.title.trim()}`.slice(0, 180);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
 async function readLocalTaskSmithCommitSha(run: RunRecord, cwd: string, repo: RepositoryConfig): Promise<string | undefined> {
@@ -442,6 +496,7 @@ async function updateSourceWithPullRequest(
   pullRequest: PullRequestRecord,
   review: ReviewRecord,
   publicBaseUrl: string,
+  buildJiraStatusInput: (detail: string) => Promise<JiraStatusCommentInput>,
 ): Promise<string | undefined> {
   if (!run.source) return undefined;
   const body = buildSourcePullRequestComment(run, pullRequest, review, publicBaseUrl);
@@ -460,8 +515,10 @@ async function updateSourceWithPullRequest(
       return undefined;
     }
     if (run.source.type === "jira") {
-      await commentOnJiraIssue(loadJiraClientConfig(), run.source.key, body);
-      return undefined;
+      const client = loadJiraClientConfig();
+      const transitionError = await transitionJiraToReview(client, run.source.key);
+      await upsertFreshJiraStatusComment(client, run.source.key, () => buildJiraStatusInput(body));
+      return transitionError;
     }
     return undefined;
   } catch (error: unknown) {
@@ -477,6 +534,7 @@ async function updateSourceWithSquashMerge(
   commitUrl: string | undefined,
   review: ReviewRecord,
   publicBaseUrl: string,
+  buildJiraStatusInput: (detail: string) => Promise<JiraStatusCommentInput>,
 ): Promise<string | undefined> {
   if (!run.source) return undefined;
   const body = buildSourceSquashMergeComment(run, targetBranch, commitSha, commitUrl, review, publicBaseUrl);
@@ -496,13 +554,26 @@ async function updateSourceWithSquashMerge(
       return undefined;
     }
     if (run.source.type === "jira") {
-      await commentOnJiraIssue(loadJiraClientConfig(), run.source.key, body);
+      await upsertFreshJiraStatusComment(loadJiraClientConfig(), run.source.key, () => buildJiraStatusInput(body));
       return undefined;
     }
     return undefined;
   } catch (error: unknown) {
     return error instanceof Error ? error.message : String(error);
   }
+}
+
+async function transitionJiraToReview(client: ReturnType<typeof loadJiraClientConfig>, issueKey: string): Promise<string | undefined> {
+  try {
+    await transitionJiraIssueToStatus(client, issueKey, jiraReviewStatus());
+    return undefined;
+  } catch (error: unknown) {
+    return `Jira review transition failed: ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
+function jiraReviewStatus(): string {
+  return process.env.TASKSMITH_JIRA_REVIEW_STATUS?.trim() || "Review";
 }
 
 function buildSourcePullRequestComment(run: RunRecord, pullRequest: PullRequestRecord, review: ReviewRecord, publicBaseUrl: string): string {

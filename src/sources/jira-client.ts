@@ -103,31 +103,7 @@ export async function getJiraIssueContext(client: JiraClientConfig, issueKey: st
   };
 }
 
-export async function commentOnJiraIssue(client: JiraClientConfig, issueKey: string, text: string): Promise<void> {
-  const commentPath = `/rest/api/3/issue/${encodeURIComponent(issueKey)}/comment`;
-  await jiraJson(client, commentPath, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ body: jiraTextDoc(text) }),
-  });
-}
-
-export function stringifyJiraDocument(document: unknown): string {
-  const text = extractText(document).replace(/\n{3,}/g, "\n\n").trim();
-  if (text) return text.slice(0, JIRA_TEXT_LIMIT);
-  if (document === undefined || document === null) return "";
-  return JSON.stringify(document).slice(0, JIRA_TEXT_LIMIT);
-}
-
-function jiraTextDoc(text: string): Record<string, unknown> {
-  return {
-    type: "doc",
-    version: 1,
-    content: [{ type: "paragraph", content: [{ type: "text", text }] }],
-  };
-}
-
-async function getJiraIssueComments(client: JiraClientConfig, issueKey: string): Promise<SourceCommentSnapshot[]> {
+export async function getJiraIssueComments(client: JiraClientConfig, issueKey: string): Promise<SourceCommentSnapshot[]> {
   const comments: SourceCommentSnapshot[] = [];
   let startAt = 0;
 
@@ -144,6 +120,65 @@ async function getJiraIssueComments(client: JiraClientConfig, issueKey: string):
   }
 
   return comments;
+}
+
+export async function commentOnJiraIssue(client: JiraClientConfig, issueKey: string, text: string): Promise<void> {
+  await commentOnJiraIssueDocument(client, issueKey, jiraTextDoc(text));
+}
+
+export async function commentOnJiraIssueDocument(client: JiraClientConfig, issueKey: string, document: Record<string, unknown>): Promise<void> {
+  const commentPath = `/rest/api/3/issue/${encodeURIComponent(issueKey)}/comment`;
+  await jiraJson(client, commentPath, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ body: document }),
+  });
+}
+
+export async function updateJiraIssueComment(client: JiraClientConfig, issueKey: string, commentId: string, text: string): Promise<void> {
+  await updateJiraIssueCommentDocument(client, issueKey, commentId, jiraTextDoc(text));
+}
+
+export async function updateJiraIssueCommentDocument(client: JiraClientConfig, issueKey: string, commentId: string, document: Record<string, unknown>): Promise<void> {
+  const commentPath = `/rest/api/3/issue/${encodeURIComponent(issueKey)}/comment/${encodeURIComponent(commentId)}`;
+  await jiraJson(client, commentPath, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ body: document }),
+  });
+}
+
+export async function transitionJiraIssueToStatus(client: JiraClientConfig, issueKey: string, targetStatus: string): Promise<boolean> {
+  const normalizedTarget = normalizeStatusName(targetStatus);
+  const current = await getJiraIssueCurrentStatus(client, issueKey);
+  if (normalizeStatusName(current) === normalizedTarget) return false;
+
+  const transitions = parseJiraTransitions(await jiraJson(client, `/rest/api/3/issue/${encodeURIComponent(issueKey)}/transitions`));
+  const transition = transitions.find((candidate) => normalizeStatusName(candidate.toStatus) === normalizedTarget)
+    ?? transitions.find((candidate) => normalizeStatusName(candidate.name) === normalizedTarget);
+  if (!transition) throw new Error(`No Jira transition from ${current} to ${targetStatus} for ${issueKey}`);
+
+  await jiraJson(client, `/rest/api/3/issue/${encodeURIComponent(issueKey)}/transitions`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ transition: { id: transition.id } }),
+  });
+  return true;
+}
+
+export function stringifyJiraDocument(document: unknown): string {
+  const text = extractText(document).replace(/\n{3,}/g, "\n\n").trim();
+  if (text) return text.slice(0, JIRA_TEXT_LIMIT);
+  if (document === undefined || document === null) return "";
+  return JSON.stringify(document).slice(0, JIRA_TEXT_LIMIT);
+}
+
+function jiraTextDoc(text: string): Record<string, unknown> {
+  return {
+    type: "doc",
+    version: 1,
+    content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+  };
 }
 
 async function jiraJson(client: JiraClientConfig, pathOrUrl: string | URL, init: RequestInit = {}): Promise<unknown> {
@@ -204,6 +239,30 @@ function parseJiraCommentPage(value: unknown): JiraCommentPage {
     maxResults: typeof value.maxResults === "number" ? value.maxResults : JIRA_COMMENT_MAX_RESULTS,
     total: typeof value.total === "number" ? value.total : value.comments.length,
   };
+}
+
+async function getJiraIssueCurrentStatus(client: JiraClientConfig, issueKey: string): Promise<string> {
+  const issuePath = new URL(`/rest/api/3/issue/${encodeURIComponent(issueKey)}`, client.baseUrl);
+  issuePath.searchParams.set("fields", "status");
+  const issue = await jiraJson(client, issuePath);
+  if (!isRecord(issue) || !isRecord(issue.fields) || !isRecord(issue.fields.status) || typeof issue.fields.status.name !== "string") {
+    throw new Error("Jira issue status response was invalid");
+  }
+  return issue.fields.status.name;
+}
+
+function parseJiraTransitions(value: unknown): Array<{ id: string; name: string; toStatus: string }> {
+  if (!isRecord(value) || !Array.isArray(value.transitions)) throw new Error("Jira transitions returned invalid JSON");
+  return value.transitions.map((transition) => {
+    if (!isRecord(transition) || typeof transition.id !== "string" || typeof transition.name !== "string" || !isRecord(transition.to) || typeof transition.to.name !== "string") {
+      throw new Error("Jira transition entry was invalid");
+    }
+    return { id: transition.id, name: transition.name, toStatus: transition.to.name };
+  });
+}
+
+function normalizeStatusName(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/gu, " ");
 }
 
 function parseJiraComment(value: unknown): SourceCommentSnapshot {

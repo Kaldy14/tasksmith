@@ -16,40 +16,40 @@ All colors are OKLCH. Neutrals are tinted slightly toward the heat hue (~65°) t
 
 | Token | Value | Role |
 |---|---|---|
-| `--background` | `oklch(0.135 0.008 65)` | App background. Slightly warmer than the current near-neutral. |
-| `--surface-1` | `oklch(0.165 0.008 65)` | Sidebar, header bands, secondary surfaces. Replaces `--card` in most use. |
-| `--surface-2` | `oklch(0.195 0.009 65)` | Cards that sit on `--surface-1` (rare; cards are not the default). |
+| `--background` | `oklch(0.125 0.012 58)` | App background. Darker and warmer so forge colors read with more force. |
+| `--surface-1` | `oklch(0.17 0.014 58)` | Sidebar, header bands, secondary surfaces. Replaces `--card` in most use. |
+| `--surface-2` | `oklch(0.215 0.016 58)` | Cards that sit on `--surface-1` (rare; cards are not the default). |
 | `--card` | `var(--surface-1)` | Back-compat alias. New code prefers `--surface-1` or `--surface-2`. |
-| `--popover` | `oklch(0.185 0.008 65)` | Floating overlays, selects, command-K. |
-| `--border` | `oklch(1 0 0 / 0.085)` | Default seam. |
-| `--border-strong` | `oklch(1 0 0 / 0.16)` | Hover and focus seams; emphasis on group headers. |
-| `--input` | `oklch(1 0 0 / 0.11)` | Form field border. |
+| `--popover` | `oklch(0.2 0.012 58)` | Floating overlays, selects, command-K. |
+| `--border` | `oklch(1 0 0 / 0.11)` | Default seam. |
+| `--border-strong` | `oklch(1 0 0 / 0.2)` | Hover and focus seams; emphasis on group headers. |
+| `--input` | `oklch(1 0 0 / 0.14)` | Form field border. |
 
 #### Foreground scale
 
 | Token | Value | Role |
 |---|---|---|
-| `--foreground` | `oklch(0.965 0.004 65)` | Primary text. Bumped from 0.94 for contrast against new `--background`. |
-| `--muted-foreground` | `oklch(0.68 0.008 65)` | Secondary text, captions, sidebar subtitles. ≥4.5:1 against `--background`. |
-| `--subtle-foreground` | `oklch(0.52 0.008 65)` | Tertiary metadata only (event sequence, IDs, timestamps). Never primary copy. |
+| `--foreground` | `oklch(0.972 0.006 65)` | Primary text. High contrast against the deep forge background. |
+| `--muted-foreground` | `oklch(0.74 0.012 65)` | Secondary text, captions, sidebar subtitles. ≥4.5:1 against `--background`. |
+| `--subtle-foreground` | `oklch(0.58 0.012 65)` | Tertiary metadata only (event sequence, IDs, timestamps). Never primary copy. |
 
 #### Brand & role colors
 
 | Token | Value | Meaning. Used for: |
 |---|---|---|
-| `--heat` | `oklch(0.72 0.175 60)` | **Identity.** Primary CTA, brand mark, focus ring, active thread rail, waiting/needs-attention status. The committed color — must carry 25–40% of attentive surface. |
-| `--heat-glow` | `oklch(0.72 0.175 60 / 0.42)` | Soft glow / shadow on focused / live elements. |
-| `--heat-muted` | `oklch(0.72 0.175 60 / 0.14)` | Tinted background fill for heat-toned chips and rails. |
-| `--copper` | `oklch(0.72 0.14 45)` | **Active work.** Tool calls, commands, command output, running-but-not-attention statuses (`running`, `verifying`, `fixing`, `reviewing`, `claimed`, `preparing`, `watching_ci`, `delivering`, `creating_pr`). Reads as "hot in the forge but not yet needing you." |
-| `--jade` | `oklch(0.74 0.135 160)` | **Completion.** Verifier pass, review pass, PR created, run completed, tool results. |
-| `--steel` | `oklch(0.68 0.13 254)` | **Information.** Sessions, queue updates, neutral system events. Never primary; subordinate to heat. |
-| `--destructive` | `oklch(0.66 0.215 25)` | **Error / abort.** Failed runs, abort button hover, error bands. Reserved. |
+| `--heat` | `oklch(0.76 0.205 56)` | **Identity.** Primary CTA, brand mark, focus ring, active thread rail, repo chip, waiting/needs-attention status. The committed color — must carry 25–40% of attentive surface. |
+| `--heat-glow` | `oklch(0.76 0.205 56 / 0.55)` | Soft glow / shadow on focused / live elements. |
+| `--heat-muted` | `oklch(0.76 0.205 56 / 0.2)` | Tinted background fill for heat-toned chips and rails. |
+| `--copper` | `oklch(0.76 0.17 42)` | **Active work.** Tool calls, commands, command output, running-but-not-attention statuses (`running`, `verifying`, `fixing`, `reviewing`, `claimed`, `preparing`, `watching_ci`, `delivering`, `creating_pr`). Reads as "hot in the forge but not yet needing you." |
+| `--jade` | `oklch(0.78 0.16 158)` | **Completion.** Verifier pass, review pass, PR created, run completed, tool results. |
+| `--steel` | `oklch(0.73 0.16 252)` | **Information.** Sessions, source links, queue updates, neutral system events. Never primary; subordinate to heat. |
+| `--destructive` | `oklch(0.68 0.23 25)` | **Error / abort.** Failed runs, abort button hover, error bands. Reserved. |
 | `--primary` | `var(--heat)` | The primary token IS heat. Old blue primary is retired. |
-| `--primary-foreground` | `oklch(0.16 0.018 65)` | Dark forge-charcoal text that sits on heat backgrounds. |
+| `--primary-foreground` | `oklch(0.145 0.024 58)` | Dark forge-charcoal text that sits on heat backgrounds. |
 
 #### Color discipline rules
 
-1. **Heat is identity, not a status.** Heat is for the brand mark, the primary CTA, the focus ring, the active thread, and `waiting_for_control` (the one status where you *are* the agent's blocker). Use it sparingly enough that it still feels like an event.
+1. **Heat is identity, not a status.** Heat is for the brand mark, the primary CTA, the focus ring, the active thread, the repo chip, and `waiting_for_control` (the one status where you *are* the agent's blocker). Use it sparingly enough that it still feels like an event.
 2. **One color = one meaning.** Copper is *only* active work. Jade is *only* completion. Steel is *only* information. A reader should be able to glance at a status pill or event tag and know what category it belongs to.
 3. **Always pair color with icon or label.** No color-only signals (a11y for color-vision deficiencies — see PRODUCT.md).
 4. **Neutrals are tinted.** No pure greys. The `chroma 0.008 at hue 65` tint keeps the surface family coherent with the heat accent.
@@ -254,7 +254,7 @@ Row 1 (h-14):
 - Refresh and Abort icon buttons.
 
 Row 2 (h-10, lighter border-bottom):
-- Repo chip + source chip (with external-link icon if URL present) + PR chip (if exists) — each on its own background tint matching role (repo: neutral; source: muted; PR: jade).
+- Repo chip + source chip (with external-link icon if URL present) + PR chip (if exists) — each on its own background tint matching role (repo: heat; source: steel; PR: jade). Chip labels use readable case, not forced uppercase.
 - Right edge: `shortId(run.id) · formatRelativeTime(run.updatedAt)` in mono caption.
 
 Below header:
@@ -333,7 +333,7 @@ Three card families:
 | EventCard work | `text-[12px]` font, 10–11px headers | `text-mono` (13px) body, `text-caption` (12px) headers |
 | EventCard assistant | `text-[15px]` | `text-base` (15px), tighter spacing |
 | Run header connection | Two indicators (footer + sidebar) | One indicator (sidebar only) |
-| Primary color | `oklch(0.59 0.2 264)` (blue) | `oklch(0.72 0.175 60)` (heat) |
+| Primary color | `oklch(0.59 0.2 264)` (blue) | `oklch(0.76 0.205 56)` (heat) |
 | Status `running` color | `--steel` (blue) | `--copper` (working) |
 | Brand mark in masthead | Component exists, not rendered | Delete `masthead.tsx`; brand mark lives in sidebar header |
 
@@ -343,7 +343,7 @@ Three card families:
 
 Restating PRODUCT.md §Accessibility with concrete deltas:
 
-- All foreground/background pairs above pass WCAG AA at the listed lightness values. Verify on each PR with a contrast checker; the riskier pairs are `--muted-foreground` (0.68 / chroma 0.008) on `--background` (0.135) — measured ≈4.95:1, comfortably ≥4.5.
+- All foreground/background pairs above pass WCAG AA at the listed lightness values. Verify on each PR with a contrast checker; the riskier pairs are `--muted-foreground` (0.74 / chroma 0.012) and `--subtle-foreground` (0.58 / chroma 0.012) on `--background` (0.125).
 - Status color is *always* paired with an icon and a text label. No bare colored dots without context.
 - Focus-visible ring uses `--heat` at `0.45` opacity with `ring-2 ring-offset-0` so it reads on any surface.
 - `prefers-reduced-motion: reduce` removes pulses, sets transition durations to `1ms`, disables horizontal recent-thread auto-scroll if added.

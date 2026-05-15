@@ -17,7 +17,7 @@ This slice turns the Phase 1 Pi runtime contract into a browser-visible manual R
   - `pi` for real Pi SDK sessions using narrow auth material.
 - WebSocket event stream at `/api/runs/:id/stream`.
 - REST fallbacks for controls.
-- Browser controls for steer, follow-up, prompt, and abort.
+- Browser controls for steer, follow-up, prompt, abort, and terminal-run reopen/follow-up.
 - Event replay after refresh via persisted normalized events in Postgres, or `tasksmith-events.jsonl` in legacy file mode.
 - Deterministic verifier slice after implementation attempts, with structured `verification` events and redacted stdout/stderr logs.
 
@@ -58,6 +58,7 @@ GET  /api/runs/:id
 GET  /api/runs/:id/review
 GET  /api/runs/:id/events?after=<sequence>
 POST /api/runs/:id/messages
+POST /api/runs/:id/reopen
 POST /api/runs/:id/abort
 POST /api/runs/:id/abort-bash
 WS   /api/runs/:id/stream?after=<sequence>
@@ -84,6 +85,16 @@ Control body:
   "message": "Change direction now."
 }
 ```
+
+Reopen body for terminal Runs (`completed`, `pr_created`, `failed`, `cancelled`):
+
+```json
+{
+  "message": "Continue from the existing workspace and make this follow-up change."
+}
+```
+
+Reopening creates a new attempt on the same Run, reuses the existing workspace, persists the follow-up as a control/chat event, and then reruns implementation, verification, review, delivery, and CI where configured. If the Run already has a PR, delivery updates the existing PR branch; otherwise normal delivery may create a PR. The UI also offers a separate "New chat" follow-up mode that creates a fresh Run with a prompt linking back to the previous Run/PR/source.
 
 ## Persistence model
 
@@ -114,7 +125,7 @@ Without `TASKSMITH_DATABASE_URL`, local/test mode stores run/source/review/PR st
 <TASKSMITH_DATA_DIR>/state/reviews.json
 ```
 
-When `TASKSMITH_DATABASE_URL` is set, TaskSmith applies Drizzle/Postgres migrations and imports legacy file-backed state. Postgres is authoritative for runs, attempts, source claims, normalized UI events, control messages, reviews/findings, pull requests, and artifact pointers. Pi session/chat files, raw Pi events, verifier/reviewer logs, workspaces, and large artifacts remain file-backed under the Run directory.
+When `TASKSMITH_DATABASE_URL` is set, TaskSmith applies Drizzle/Postgres migrations and imports legacy file-backed state. Postgres is authoritative for runs, attempts, source claims, normalized UI events, control messages, reviews/findings, pull requests, and artifact pointers. Pi session/chat files, raw Pi events, verifier/reviewer logs, workspaces, and large artifacts remain file-backed under the Run directory. Pi session id/file metadata is stored on the Run so reopened attempts can continue the existing Pi session when available.
 
 ## Deterministic verifier slice
 
@@ -189,6 +200,7 @@ Browser e2e with `agent-browser` was run against local server and verified:
 - live event stream renders,
 - steer message can be sent and appears in timeline,
 - follow-up message can be queued and appears in timeline,
+- a terminal run can be reopened from chat as a second attempt in the same workspace,
 - abort button cancels active demo run and renders cancelled state.
 - deterministic verifier events render after the implementation attempt completes.
 

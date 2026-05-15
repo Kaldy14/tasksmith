@@ -1,13 +1,13 @@
 {
   "description": "Work TaskSmith instance: Jira is the intake source, GitHub uses a separate work account/profile. Copy to the work Hetzner server and set TASKSMITH_CONFIG_PATH.",
   "sourceFlow": {
-    "readinessLabel": "myth",
+    "readinessLabel": "tasksmith",
     "pollIntervalSeconds": 60,
     "jiraRepoRouting": {
       "strategy": "label",
       "labels": {
-        "vosime-admin": "vosime-admin",
-        "core-hub": "core-hub"
+        "repo:vosime-admin": "vosime-admin",
+        "repo:core-hub": "core-hub"
       }
     }
   },
@@ -63,8 +63,8 @@
       "issueProvider": {
         "type": "jira",
         "projectKey": "ITE",
-        "jql": "project = ITE AND labels = myth AND labels = vosime-admin AND status = 'Ready for AI'",
-        "repoLabel": "vosime-admin"
+        "jql": "project = ITE AND labels = tasksmith AND labels = 'repo:vosime-admin' AND status = 'Ready for AI'",
+        "repoLabel": "repo:vosime-admin"
       },
       "initCommands": [
         {
@@ -88,8 +88,8 @@
       "issueProvider": {
         "type": "jira",
         "projectKey": "ITE",
-        "jql": "project = ITE AND labels = myth AND labels = core-hub AND status = 'Ready for AI'",
-        "repoLabel": "core-hub"
+        "jql": "project = ITE AND labels = tasksmith AND labels = 'repo:core-hub' AND status = 'Ready for AI'",
+        "repoLabel": "repo:core-hub"
       },
       "initCommands": [
         {

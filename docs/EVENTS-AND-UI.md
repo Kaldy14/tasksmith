@@ -42,7 +42,8 @@ Recommended API:
 GET /runs/:id              # run details
 GET /runs/:id/events       # paginated historical events
 WS  /runs/:id/stream       # live events + controls
-POST /runs/:id/messages    # optional REST fallback
+POST /runs/:id/messages    # optional REST fallback while active
+POST /runs/:id/reopen      # terminal-run follow-up in same workspace
 POST /runs/:id/abort       # optional REST fallback
 ```
 
@@ -62,6 +63,11 @@ When agent is running, UI should ask whether to:
 - steer now,
 - queue follow-up,
 - abort and restart.
+
+When a Run is terminal (`completed`, `pr_created`, `failed`, or `cancelled`), the composer should stay available in follow-up mode. The operator chooses either:
+
+- continue the existing Run: create a new attempt in the same workspace and rerun implementation/verification/review/delivery,
+- start a new chat: create a fresh Run with a prompt linking back to the previous Run/PR/source.
 
 ### Steer
 
@@ -162,7 +168,7 @@ Do not show raw JSON by default. Provide a developer/debug drawer for raw events
 Before forwarding UI commands to Pi, backend must validate:
 
 - user is allowed to control this Run,
-- Run is in a controllable state,
+- Run is in a controllable state, or terminal and being reopened,
 - Attempt is active when steering/aborting,
 - message size is within limit,
 - content is stored before delivery.

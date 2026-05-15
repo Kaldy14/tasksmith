@@ -140,6 +140,29 @@ function formatEventTime(iso: string): string {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
+function formatStatusLabel(status: string): string {
+  switch (status) {
+    case "waiting_for_control":
+      return "Waiting for control";
+    case "watching_ci":
+      return "Watching CI";
+    case "creating_pr":
+      return "Creating PR";
+    case "pr_created":
+      return "PR created";
+    default:
+      return status.replace(/_/gu, " ").replace(/^./u, (char) => char.toUpperCase());
+  }
+}
+
+function statusToneClass(status: string): string {
+  if (status === "waiting_for_control") return "border-heat/35 bg-heat-muted text-heat";
+  if (status === "completed" || status === "pr_created") return "border-jade/35 bg-jade/10 text-jade";
+  if (status === "failed" || status === "cancelled") return "border-destructive/35 bg-destructive/10 text-destructive";
+  if (status === "queued") return "border-border bg-accent text-muted-foreground";
+  return "border-copper/35 bg-copper/10 text-copper";
+}
+
 function WorkIcon({ type }: { type: string }) {
   if (type === "command" || type === "command_output") return <SquareTerminal className="size-3.5" />;
   if (type === "tool_call" || type === "tool_result") return <Wrench className="size-3.5" />;
@@ -204,6 +227,53 @@ export const EventCard = memo(function EventCard({ event }: EventCardProps) {
           <div className="mt-2 flex items-center gap-2 text-mono-xs text-subtle-foreground">
             <Bot className="size-3" />
             <span>{formatEventTime(event.createdAt)}</span>
+          </div>
+        </div>
+      </article>
+    );
+  }
+
+  if (event.type === "run_status" && event.data.type === "run_status") {
+    return (
+      <article className="py-2.5">
+        <div className="my-1 flex items-center gap-3">
+          <span className="h-px flex-1 bg-border" />
+          <div className="flex max-w-[78ch] flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-lg border border-border bg-surface-1/80 px-3 py-1.5 text-sm leading-5 text-muted-foreground">
+            <span className={cn("inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-caption tracking-caption", statusToneClass(event.data.status))}>
+              <Clock3 className="size-3" />
+              {formatStatusLabel(event.data.status)}
+            </span>
+            {event.data.detail ? <span className="normal-case tracking-normal">{event.data.detail}</span> : null}
+          </div>
+          <span className="h-px flex-1 bg-border" />
+        </div>
+      </article>
+    );
+  }
+
+  if (event.type === "attempt_done" && event.data.type === "attempt_done") {
+    const completed = event.data.status === "completed";
+    const failed = event.data.status === "failed" || event.data.status === "aborted";
+    return (
+      <article className="py-3">
+        <div className="mx-auto flex max-w-[78ch] items-start gap-3 rounded-lg border border-border bg-surface-1 px-4 py-3">
+          <span
+            className={cn(
+              "mt-0.5 grid size-6 shrink-0 place-items-center rounded-md",
+              completed && "bg-jade/12 text-jade",
+              failed && "bg-destructive/12 text-destructive",
+              !completed && !failed && "bg-accent text-muted-foreground",
+            )}
+          >
+            {completed ? <Check className="size-3.5" /> : <Clock3 className="size-3.5" />}
+          </span>
+          <div className="min-w-0 space-y-1">
+            <div className={cn("text-caption font-medium tracking-caption", completed && "text-jade", failed && "text-destructive", !completed && !failed && "text-muted-foreground")}>
+              Attempt {formatStatusLabel(event.data.status).toLowerCase()}
+            </div>
+            {event.data.summary ? (
+              <div className="whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground">{event.data.summary}</div>
+            ) : null}
           </div>
         </div>
       </article>

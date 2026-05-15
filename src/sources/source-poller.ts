@@ -2,7 +2,8 @@ import { spawn } from "node:child_process";
 import type { AppConfig, GitHubProviderConfig, IssueProviderConfig, RepositoryConfig } from "../domain/types.js";
 import type { FileStore } from "../storage/file-store.js";
 import { SourceIntakeService } from "./source-intake.js";
-import { commentOnJiraIssue, loadJiraClientConfig, searchJiraIssueContexts } from "./jira-client.js";
+import { loadJiraClientConfig, searchJiraIssueContexts } from "./jira-client.js";
+import { upsertFreshJiraStatusComment } from "./jira-status-comment.js";
 
 interface GitHubIssueLabel {
   name: string;
@@ -104,9 +105,9 @@ export class SourcePoller {
 
     for (const issue of issues) {
       const labels = issue.labels;
-      const routedRepoKey = resolveJiraRepoKey(labels, this.config.sourceFlow.jiraRepoRouting.labels);
-      if (routedRepoKey && routedRepoKey !== repoKey) continue;
-      if (!routedRepoKey && issueProvider.repoLabel && !labels.includes(issueProvider.repoLabel)) continue;
+      const routedRepoKeys = resolveJiraRepoKeys(labels, this.config.sourceFlow.jiraRepoRouting.labels);
+      if (routedRepoKeys.length > 0 && !routedRepoKeys.includes(repoKey)) continue;
+      if (routedRepoKeys.length === 0 && issueProvider.repoLabel && !labels.includes(issueProvider.repoLabel)) continue;
 
       const intakeResult = await this.intake.intakeJiraIssue({
         repoKey,
@@ -119,7 +120,7 @@ export class SourcePoller {
         comments: issue.comments,
         attachments: issue.attachments,
         metadata: issue.metadata,
-        comment: (text) => commentOnJiraIssue(client, issue.key, text),
+        upsertStatusComment: (buildInput) => upsertFreshJiraStatusComment(client, issue.key, buildInput),
       });
       createdRuns += intakeResult.createdRuns;
       skippedExistingClaims += intakeResult.skippedExistingClaims;
@@ -166,12 +167,13 @@ function quoteJiraString(value: string): string {
   return JSON.stringify(value);
 }
 
-function resolveJiraRepoKey(labels: string[], routingLabels: Record<string, string>): string | undefined {
+function resolveJiraRepoKeys(labels: string[], routingLabels: Record<string, string>): string[] {
+  const repoKeys = new Set<string>();
   for (const label of labels) {
     const repoKey = routingLabels[label];
-    if (repoKey) return repoKey;
+    if (repoKey) repoKeys.add(repoKey);
   }
-  return undefined;
+  return [...repoKeys];
 }
 
 function parseGitHubIssue(value: unknown): GitHubIssueListItem {

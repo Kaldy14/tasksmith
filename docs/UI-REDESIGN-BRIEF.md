@@ -2,7 +2,7 @@
 
 This is a self-contained handoff for the **TaskSmith web UI overhaul**. A future agent should be able to read this alongside [`/PRODUCT.md`](../PRODUCT.md) and [`/DESIGN.md`](../DESIGN.md) and implement the entire redesign without needing the conversation that produced it.
 
-**Status:** design approved, implementation not started.
+**Status:** design approved, implementation in progress.
 **Approved by:** repository owner (2026-05-14).
 **Approach used:** `/impeccable` workflow — register confirmed as `product`, full shell overhaul scope, committed-heat color strategy, `/` becomes the empty new-chat surface.
 
@@ -100,9 +100,9 @@ The HomeHero **reuses the API** that `IntakeForm` calls today: `createRun({ titl
 - **Row 1** (`h-14 px-6 border-b border-border bg-surface-1`):
   - `<h1 className="text-h1 truncate">` the run title.
   - Right side: `<StatusPill>`, then refresh ghost icon button, then abort ghost icon button (destructive treatment on hover only).
-- **Row 2** (`h-10 px-6 border-b border-border bg-background flex items-center gap-2`):
-  - Repo chip: `text-caption uppercase` with folder icon, no border, just `bg-accent rounded-md`.
-  - Source chip (if `run.source`): same chip + external-link icon if URL present, click opens in new tab.
+- **Row 2** (`h-10 px-6 border-b border-border bg-surface-1/65 flex items-center gap-2`):
+  - Repo chip: heat-toned, readable case (for example `TaskSmith`, not `TASKSMITH`) with folder icon.
+  - Source chip (if `run.source`): steel-toned, readable case, external-link icon if URL present, click opens in new tab.
   - PR chip (if `run.pullRequest`): jade-tinted variant.
   - `ml-auto` right group: `text-mono text-subtle-foreground` showing `{shortId(run.id)} · {formatRelativeTime(run.updatedAt)}`.
 - Error band: stays, push width to full and slightly larger type (`text-sm`).
@@ -192,9 +192,9 @@ For each surface, the following states must look intentional. Treat any state th
 | Running | StatusPill copper pulse. Event stream auto-scrolls. |
 | Waiting for control | StatusPill **heat** pulse (the one moment heat means "you, now"). Composer enabled. |
 | Verifying / Reviewing / Delivering / Creating PR | StatusPill copper pulse with the exact label. |
-| Completed / PR created | StatusPill jade solid (no pulse). PR chip prominent in row 2 if present. Composer disabled. |
-| Failed | StatusPill destructive solid. Destructive band immediately under header showing `run.error` text. Composer disabled. |
-| Cancelled | Same as Failed but copy reads "cancelled" not "failed." |
+| Completed / PR created | StatusPill jade solid (no pulse). PR chip prominent in row 2 if present. Composer switches to terminal follow-up mode with Continue run / New chat choices. |
+| Failed | StatusPill destructive solid. Destructive band immediately under header showing `run.error` text. Composer switches to terminal follow-up mode. |
+| Cancelled | Same as Failed but copy reads "cancelled" not "failed"; composer can reopen the run. |
 | Offline (websocket dropped) | Sidebar connection chip flips to destructive. Row 2 may show an inline reconnect indicator (optional). |
 
 ### 4.3 Sidebar
@@ -282,8 +282,8 @@ The previous session completed tokens, primitive components, and reusable displa
 - `Textarea` — heat focus ring, surface-1 base, text-base baseline.
 - `Kbd` (NEW) — `<Kbd>⌘↵</Kbd>` for keyboard hint chips. Used in HomeHero hero card and ControlBar.
 - `SectionLabel` (NEW) — uppercase caption with optional `trailing` slot. Use for "Projects", "Recent", section headers.
-- `Chip` (NEW) — generic chip for Anvil Row 2 and elsewhere. Props: `tone` (muted/jade/heat/copper/steel/destructive), `icon` (ReactNode), `href` + `external` for source links, `children` for the label. Renders as `<a>` when `href` is set, otherwise `<span>`.
-- `PageHeader` + `PageTitle` (NEW) — the two-row header shell from §3.5. `<PageHeader primary={...} secondary={...} />`. Row 1 = h-14 surface-1; Row 2 = h-10 background. Pass `<PageTitle title="..." subtitle="..." />` plus action buttons into `primary`. Omit `secondary` for ConfigPage's single-row header.
+- `Chip` (NEW) — generic chip for Anvil Row 2 and elsewhere. Props: `tone` (muted/jade/heat/copper/steel/destructive), `icon` (ReactNode), `href` + `external` for source links, `children` for the label. Renders as `<a>` when `href` is set, otherwise `<span>`. Style is sentence-case `text-sm font-medium tracking-tight` with a full 1px tone-tinted border — not uppercase, not borderless. Default the metadata chips (repo, source) to `muted`; reserve `jade`/`heat`/`copper`/`steel`/`destructive` for outcomes (PR open, attention required, working, etc.).
+- `PageHeader` + `PageTitle` (NEW) — the two-row header shell from §3.5. `<PageHeader primary={...} secondary={...} />`. Row 1 = h-14 surface-1; Row 2 = h-10 background (one tier darker than Row 1, so the hierarchy reads even when the row is sparse). Pass `<PageTitle title="..." subtitle="..." />` plus action buttons into `primary`. Pass `undefined` for `secondary` to collapse Row 2 entirely — required while a run is loading and on ConfigPage's single-row header. Never pass an empty placeholder element; it leaves a visually-empty band.
 
 **Reusable display components** (`src/web/src/components/`)
 - `BrandMark` (NEW) — heat-tinted Flame square. Sizes `sm`/`md`/`lg`. Use in `HeroShell` (auto), ProjectRail header, LoginPage.

@@ -37,6 +37,12 @@ interface GitHubCheck {
   detailsUrl?: string;
 }
 
+interface CodeRabbitReviewFeedback {
+  summary: string;
+  prompt: string;
+  url?: string;
+}
+
 export interface CiWatchResult {
   status: "passed" | "failed" | "skipped";
   summary: string;
@@ -103,6 +109,19 @@ export class GitHubCiWatcher {
 
       const pending = checks.filter((check) => checkState(check) === "pending");
       if (pending.length === 0) {
+        const codeRabbitFeedback = await findCodeRabbitReviewFeedback(provider, pullRequest, commandOptionsForDeadline(deadline, options.signal));
+        if (codeRabbitFeedback) {
+          await emit({
+            type: "ci",
+            provider: "github",
+            status: "failed",
+            summary: codeRabbitFeedback.summary,
+            attempt: pollCount,
+            ...(codeRabbitFeedback.url ? { detailsUrl: codeRabbitFeedback.url } : {}),
+            log: codeRabbitFeedback.prompt,
+          });
+          return { status: "failed", summary: codeRabbitFeedback.summary, log: codeRabbitFeedback.prompt };
+        }
         const summary = `${checks.length} GitHub check(s) passed.`;
         await emit({ type: "ci", provider: "github", status: "passed", summary, attempt: pollCount });
         return { status: "passed", summary };
@@ -132,7 +151,7 @@ async function listPullRequestChecks(provider: GitHubProviderConfig, prRef: stri
     "--repo",
     `${provider.owner}/${provider.repo}`,
     "--json",
-    "name,bucket,state,conclusion,link,detailsUrl",
+    "name,bucket,state,link",
   ], provider, options);
   const text = result.stdout.trim();
   if (!text) {
@@ -142,6 +161,69 @@ async function listPullRequestChecks(provider: GitHubProviderConfig, prRef: stri
   const parsed = JSON.parse(text) as unknown;
   if (!Array.isArray(parsed)) throw new Error("gh pr checks did not return a JSON array");
   return parsed.map(parseCheck).filter((check) => check.name.length > 0);
+}
+
+async function findCodeRabbitReviewFeedback(provider: GitHubProviderConfig, pullRequest: PullRequestRecord, options: CommandOptions): Promise<CodeRabbitReviewFeedback | undefined> {
+  if (pullRequest.number === undefined) return undefined;
+  const pr = await readPullRequest(provider, pullRequest.number, options);
+  const headSha = readNestedString(pr, "head", "sha");
+  if (!headSha) return undefined;
+  const reviews = await readPullRequestReviews(provider, pullRequest.number, options);
+  const currentHeadReviews = reviews.filter((review) => {
+    const login = readNestedString(review, "user", "login")?.toLowerCase() ?? "";
+    return login.includes("coderabbit") && stringField(review.commit_id) === headSha;
+  });
+  const latestActionable = currentHeadReviews.reverse().find((review) => extractCodeRabbitPrompt(stringField(review.body) ?? "") !== undefined);
+  if (!latestActionable) return undefined;
+  const body = stringField(latestActionable.body) ?? "";
+  const prompt = extractCodeRabbitPrompt(body) ?? body.trim();
+  return {
+    summary: "CodeRabbit review left actionable comments on the current PR head.",
+    prompt: appendCapped("", prompt),
+    ...(stringField(latestActionable.html_url) ? { url: stringField(latestActionable.html_url)! } : {}),
+  };
+}
+
+async function readPullRequest(provider: GitHubProviderConfig, pullRequestNumber: number, options: CommandOptions): Promise<Record<string, unknown>> {
+  const result = await runGh(["api", `repos/${provider.owner}/${provider.repo}/pulls/${pullRequestNumber}`], provider, options);
+  if (result.code !== 0) throw new Error(`gh api pull request failed: ${summarizeCommandFailure(result)}`);
+  const parsed = JSON.parse(result.stdout.trim()) as unknown;
+  if (!isRecord(parsed)) throw new Error("gh api pull request did not return an object");
+  return parsed;
+}
+
+async function readPullRequestReviews(provider: GitHubProviderConfig, pullRequestNumber: number, options: CommandOptions): Promise<Record<string, unknown>[]> {
+  const result = await runGh(["api", `repos/${provider.owner}/${provider.repo}/pulls/${pullRequestNumber}/reviews`], provider, options);
+  if (result.code !== 0) throw new Error(`gh api pull request reviews failed: ${summarizeCommandFailure(result)}`);
+  const parsed = JSON.parse(result.stdout.trim()) as unknown;
+  if (!Array.isArray(parsed)) throw new Error("gh api pull request reviews did not return an array");
+  return parsed.filter(isRecord);
+}
+
+function extractCodeRabbitPrompt(body: string): string | undefined {
+  if (!hasActionableCodeRabbitFeedback(body)) return undefined;
+  const promptSection = /Prompt for all review comments with AI agents[\s\S]*?```(?<prompt>[\s\S]*?)```/iu.exec(body)?.groups?.prompt?.trim();
+  if (promptSection) return `${promptSection}\n\nVerify each finding against current code. Fix only still-valid, relevant issues. If a comment is stale, cosmetic-only, or not worth changing, skip it with a brief reason.`;
+  const compact = body.replace(/<[^>]+>/gu, " ").replace(/\s+/gu, " ").trim();
+  return compact ? `${compact.slice(0, 8_000)}\n\nVerify each finding against current code. Fix only still-valid, relevant issues. Skip stale or cosmetic-only comments with a brief reason.` : undefined;
+}
+
+function hasActionableCodeRabbitFeedback(body: string): boolean {
+  const hasActionableSection = /(?:Actionable comments|Potential issues|Potential issue|Bug risk|Security concern|High confidence comments|Review comments \([1-9]\d*\))/iu.test(body);
+  if (hasActionableSection) return true;
+  const hasNitpickOnly = /Nitpick comments/iu.test(body) && !hasActionableSection;
+  if (hasNitpickOnly) return false;
+  return false;
+}
+
+function readNestedString(record: Record<string, unknown>, key: string, nestedKey: string): string | undefined {
+  const child = record[key];
+  if (!isRecord(child)) return undefined;
+  return stringField(child[nestedKey]);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function parseCheck(value: unknown): GitHubCheck {

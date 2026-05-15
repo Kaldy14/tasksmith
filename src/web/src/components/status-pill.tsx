@@ -3,21 +3,21 @@ import { cn } from "@/lib/utils";
 import type { RunStatus } from "@/types";
 
 const STATUS_LABEL: Record<RunStatus, string> = {
-  queued: "queued",
-  claimed: "claimed",
-  preparing: "preparing",
-  running: "running",
-  waiting_for_control: "waiting",
-  verifying: "verifying",
-  fixing: "fixing",
-  reviewing: "reviewing",
-  watching_ci: "watching CI",
-  delivering: "delivering",
-  creating_pr: "creating PR",
+  queued: "Queued",
+  claimed: "Claimed",
+  preparing: "Preparing",
+  running: "Running",
+  waiting_for_control: "Waiting",
+  verifying: "Verifying",
+  fixing: "Fixing",
+  reviewing: "Reviewing",
+  watching_ci: "Watching CI",
+  delivering: "Delivering",
+  creating_pr: "Creating PR",
   pr_created: "PR created",
-  completed: "completed",
-  failed: "failed",
-  cancelled: "cancelled",
+  completed: "Completed",
+  failed: "Failed",
+  cancelled: "Cancelled",
 };
 
 type StatusVariant = "working" | "attention" | "completed" | "failed" | "queued";

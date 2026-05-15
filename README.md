@@ -81,7 +81,7 @@ Manual Run, deterministic verification, GitHub/Jira source pickup, fresh-context
 - a browser UI for manual Runs,
 - persistent event JSONL replay,
 - WebSocket live event streaming,
-- browser controls for steer/follow-up/abort,
+- browser controls for steer/follow-up/abort, plus terminal-run reopen/follow-up from chat,
 - configured repository/source metadata,
 - a GitHub Issues/Jira poll endpoint with file-backed idempotent claims,
 - deterministic verifier events and redacted logs,

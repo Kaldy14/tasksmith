@@ -4,13 +4,14 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import path from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
 import type { AppConfig, RepositoryConfig } from "../domain/types.js";
-import { parseControlInput, parseCreateRunInput } from "../domain/validation.js";
+import { parseControlInput, parseCreateRunInput, parseReopenRunInput } from "../domain/validation.js";
 import type { FileStore } from "../storage/file-store.js";
 import type { RuntimeManager } from "../runtime/runtime-manager.js";
 import type { RunScheduler } from "../runtime/run-scheduler.js";
 import type { SourcePoller } from "../sources/source-poller.js";
 import type { SourceIntakeService } from "../sources/source-intake.js";
 import { handleGitHubIssuesWebhook } from "../sources/github-webhook.js";
+import { handleJiraWebhook } from "../sources/jira-webhook.js";
 import type { TaskSmithAuthService } from "../auth/tasksmith-auth.js";
 import { readEditableConfig, saveEditableConfig } from "./config.js";
 import { EventHub, sendJson } from "./event-hub.js";
@@ -82,6 +83,19 @@ async function routeHttp(deps: ServerDeps, req: IncomingMessage, res: ServerResp
     try {
       const rawBody = await readRawBody(req);
       const result = await handleGitHubIssuesWebhook(deps.config, deps.sourceIntake, req.headers, rawBody);
+      if (result.createdRuns > 0) deps.scheduler.wake();
+      sendJson(res, 202, result);
+    } catch (error: unknown) {
+      const statusCode = isStatusError(error) ? error.statusCode : 500;
+      sendJson(res, statusCode, { error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/webhooks/jira") {
+    try {
+      const rawBody = await readRawBody(req);
+      const result = await handleJiraWebhook(deps.config, deps.sourceIntake, req.headers, rawBody);
       if (result.createdRuns > 0) deps.scheduler.wake();
       sendJson(res, 202, result);
     } catch (error: unknown) {
@@ -182,6 +196,15 @@ async function routeHttp(deps: ServerDeps, req: IncomingMessage, res: ServerResp
     const input = parseControlInput(await readJson(req));
     await deps.runtime.sendControl(runId, input.kind, input.message);
     sendJson(res, 202, { ok: true });
+    return;
+  }
+
+  const reopenMatch = /^\/api\/runs\/([^/]+)\/reopen$/.exec(url.pathname);
+  if (method === "POST" && reopenMatch) {
+    const runId = decodeURIComponent(reopenMatch[1] ?? "");
+    const input = parseReopenRunInput(await readJson(req));
+    const run = await deps.runtime.reopenRun(runId, input.message);
+    sendJson(res, 202, { run });
     return;
   }
 

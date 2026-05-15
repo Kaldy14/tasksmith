@@ -17,9 +17,9 @@ Minimal shape:
 ```json
 {
   "sourceFlow": {
-    "readinessLabel": "myth",
+    "readinessLabel": "tasksmith",
     "pollIntervalSeconds": 60,
-    "jiraRepoRouting": { "strategy": "label", "labels": { "vosime-admin": "vosime-admin" } }
+    "jiraRepoRouting": { "strategy": "label", "labels": { "repo:vosime-admin": "vosime-admin" } }
   },
   "workflow": {
     "type": "single_task_sandcastle",
@@ -259,8 +259,8 @@ config/examples/work.jira.github.json
 
 In that config:
 
-- `sourceFlow.readinessLabel = "myth"` is the preferred global Jira pickup label for the next deployment. Local examples may still use `tasksmith` for e2e fixtures.
-- `sourceFlow.jiraRepoRouting.labels` maps Jira labels to TaskSmith repo keys.
+- `sourceFlow.readinessLabel = "tasksmith"` is the global Jira pickup label.
+- `sourceFlow.jiraRepoRouting.labels` maps Jira `repo:*` labels to TaskSmith repo keys.
 - `issueProvider.type = "jira"` marks the repo for Jira intake.
 - `jql` defines the readiness query for that repo.
 - `repoLabel` documents the expected Jira repo-routing label.
@@ -272,19 +272,19 @@ Example routing:
 ```json
 {
   "sourceFlow": {
-    "readinessLabel": "myth",
+    "readinessLabel": "tasksmith",
     "jiraRepoRouting": {
       "strategy": "label",
       "labels": {
-        "vosime-admin": "vosime-admin",
-        "core-hub": "core-hub"
+        "repo:vosime-admin": "vosime-admin",
+        "repo:core-hub": "core-hub"
       }
     }
   }
 }
 ```
 
-That means a Jira issue with labels `tasksmith` and `vosime-admin` routes to the `vosime-admin` repository. This mapping is per-instance configurable.
+That means a Jira issue with labels `tasksmith` and `repo:vosime-admin` routes to the `vosime-admin` repository. If an issue has multiple repo labels, TaskSmith creates one child Run and one source claim per repo while maintaining one durable Jira status comment for the issue. This mapping is per-instance configurable.
 
 For a deployment that needs a different GitHub account, create a separate GitHub CLI profile and/or SSH key, for example:
 
@@ -302,7 +302,19 @@ TASKSMITH_JIRA_EMAIL=deploy@example.com
 TASKSMITH_JIRA_API_TOKEN=<token-from-secret-store>
 ```
 
-The Jira poller uses each repo's configured `issueProvider.jql` when present. If `jql` is omitted, it builds a simple readiness-label query from `projectKey`, `sourceFlow.readinessLabel`, and `repoLabel`. Jira search uses `/rest/api/3/search/jql` because the older `/rest/api/3/search` endpoint is deprecated/being removed in Jira Cloud. After search, TaskSmith fetches each issue's description, labels, status/project metadata, paginated comments, and attachment metadata before creating a Run. Claim keys are `jira:<ISSUEKEY>`, so duplicate polling or overlapping repo queries do not create duplicate Runs.
+Jira webhooks are optional but recommended for low-latency pickup. Configure Jira Automation or a Jira webhook to POST issue/comment events to `/api/webhooks/jira` with either `Authorization: Bearer <secret>` or `x-tasksmith-webhook-secret: <secret>`:
+
+```txt
+TASKSMITH_JIRA_WEBHOOK_ENABLED=1
+TASKSMITH_JIRA_WEBHOOK_SECRET=<long-random-shared-secret>
+# Optional; defaults match the Vosime Jira workflow.
+TASKSMITH_JIRA_IN_PROGRESS_STATUS="In Progress"
+TASKSMITH_JIRA_REVIEW_STATUS="Review"
+```
+
+When a Jira-sourced Run is created, TaskSmith best-effort transitions the issue to `TASKSMITH_JIRA_IN_PROGRESS_STATUS`. When a ready PR is created, it transitions the issue to `TASKSMITH_JIRA_REVIEW_STATUS`. TaskSmith also maintains one durable Jira status comment per issue using Jira rich-text links to the Run and PR instead of visible HTML markers.
+
+The Jira poller uses each repo's configured `issueProvider.jql` when present. If `jql` is omitted, it builds a simple readiness-label query from `projectKey`, `sourceFlow.readinessLabel`, and `repoLabel`. Jira search uses `/rest/api/3/search/jql` because the older `/rest/api/3/search` endpoint is deprecated/being removed in Jira Cloud. After search or webhook receipt, TaskSmith fetches each issue's description, labels, status/project metadata, paginated comments, and attachment metadata before creating Runs. Claim keys are repo-scoped (`jira:<ISSUEKEY>:<repoKey>`), so multi-repo issues and duplicate webhook/poll deliveries remain idempotent.
 
 For read-only API diagnostics against a known issue without comments, labels, or Run creation:
 
@@ -407,7 +419,7 @@ Review metadata is stored in `state/reviews.json` and exposed at `GET /api/revie
 
 If verification and review pass in `ready_pr` mode, TaskSmith checks for a non-empty diff, creates a branch named `tasksmith/<source-or-title>-<run-suffix>`, commits all workspace changes with the TaskSmith bot identity, pushes the branch, and runs `gh pr create` without `--draft`. PR metadata is stored in `state/pull-requests.json` and exposed at `GET /api/pull-requests`. Source issues receive a PR-link comment when credentials are available.
 
-After PR creation, TaskSmith polls GitHub checks with `gh pr checks`. Passing checks, skipped/no checks, or absence of checks complete the Run as `pr_created`. Failed checks fetch failed GitHub Actions logs with `gh run view --log-failed`, start a bounded CI fix attempt, rerun verification/review, push a fix commit to the existing PR branch, and poll checks again. `maxCiFixAttempts` controls this retry loop; `ciPollIntervalMs` and `ciTimeoutMs` control polling cadence and timeout.
+After PR creation, TaskSmith polls GitHub checks with `gh pr checks`. Once checks are no longer pending, TaskSmith also inspects CodeRabbit PR reviews on the current head commit. Actionable CodeRabbit review sections are treated as post-PR feedback and start the same bounded post-PR fix loop as failed CI. Nitpick-only CodeRabbit comments are non-blocking by default. The follow-up prompt tells the agent to verify each finding against current code and fix only still-valid, relevant issues. Failed checks fetch failed GitHub Actions logs with `gh run view --log-failed`, start a bounded fix attempt, rerun verification/review, push a fix commit to the existing PR branch, and poll again. Passing checks with no current-head actionable CodeRabbit feedback, skipped/no checks, or absence of checks complete the Run as `pr_created`. `maxCiFixAttempts` controls this post-PR retry loop; `ciPollIntervalMs` and `ciTimeoutMs` control polling cadence and timeout.
 
 If verification and review pass in `squash_merge_main` mode, TaskSmith checks for a non-empty diff, commits all workspace changes as one TaskSmith commit, and pushes `HEAD` to `refs/heads/<mergeTargetBranch>` without force. The Run completes with a delivery event containing the target branch and commit URL/SHA. Source issues receive a direct-merge comment when credentials are available.
 

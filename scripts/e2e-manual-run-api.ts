@@ -8,7 +8,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { WebSocket } from "ws";
 
 interface RunResponse {
-  run: { id: string; status: string; adapter: string; title: string };
+  run: { id: string; status: string; adapter: string; title: string; currentAttemptId: string };
 }
 
 interface EventsResponse {
@@ -58,13 +58,19 @@ async function main(): Promise<void> {
     await postJson(`${baseUrl}/api/runs/${created.run.id}/messages`, { kind: "follow_up", message: "API_E2E_FOLLOW_UP" });
     await waitForRunStatus(baseUrl, created.run.id, "completed", 20_000);
 
+    const reopenResponse = await postJson<RunResponse>(`${baseUrl}/api/runs/${created.run.id}/reopen`, { message: "API_E2E_REOPEN_FOLLOW_UP" });
+    assertEqual(reopenResponse.run.currentAttemptId, "attempt-2", "reopened attempt id");
+    assertEqual(reopenResponse.run.status, "fixing", "reopened status");
+    await waitForRunStatus(baseUrl, created.run.id, "completed", 20_000);
+
     const events = await getJson<EventsResponse>(`${baseUrl}/api/runs/${created.run.id}/events`);
     const text = JSON.stringify(events);
     assert(text.includes("API_E2E_STEER"), "events should include steer text");
     assert(text.includes("API_E2E_FOLLOW_UP"), "events should include follow-up text");
+    assert(text.includes("API_E2E_REOPEN_FOLLOW_UP"), "events should include reopened follow-up text");
     assert(events.events.some((event) => event.type === "assistant_delta"), "events should include assistant deltas");
     assert(events.events.some((event) => event.type === "tool_call"), "events should include tool calls");
-    assert(events.events.some((event) => event.type === "attempt_done"), "events should include attempt_done");
+    assert(events.events.filter((event) => event.type === "attempt_done").length >= 2, "events should include attempt_done for both attempts");
     assert(events.events.some((event) => event.type === "verification"), "events should include verification");
     assert(text.includes("workspace smoke ok"), "events should include verifier output");
     assert(socketEvents.includes("assistant_delta"), "websocket should stream assistant_delta");

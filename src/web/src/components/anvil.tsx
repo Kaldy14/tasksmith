@@ -1,174 +1,200 @@
 import { useEffect } from "react";
-import { ExternalLink, Folder, PanelRight, Power, RefreshCw, SquareTerminal } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { Folder, GitPullRequest, Link2, Power, RefreshCw, RotateCcw } from "lucide-react";
+import { ControlBar } from "@/components/control-bar";
+import { EventStream } from "@/components/event-stream";
+import { StatusPill } from "@/components/status-pill";
 import { Button } from "@/components/ui/button";
-import { ControlBar } from "./control-bar";
-import { EventStream } from "./event-stream";
-import { StatusPill } from "./status-pill";
+import { Chip } from "@/components/ui/chip";
+import { PageHeader, PageTitle } from "@/components/ui/page-header";
+import { createRun } from "@/api";
 import { useRunStream } from "@/hooks/use-run-stream";
 import { formatRelativeTime, shortId } from "@/lib/utils";
-import type { ConnectionStatus } from "@/types";
+import type { ConnectionStatus, RunRecord, RunStatus, RunSourceType, TerminalFollowUpMode } from "@/types";
 
 interface AnvilProps {
-  runId: string | undefined;
+  runId: string;
   onConnectionChange?: (status: ConnectionStatus) => void;
   onActivity?: () => void;
 }
 
+const CONTROLLABLE: RunStatus[] = ["preparing", "running", "waiting_for_control", "fixing"];
+const TERMINAL: RunStatus[] = ["completed", "pr_created", "failed", "cancelled"];
+
 export function Anvil({ runId, onConnectionChange, onActivity }: AnvilProps) {
-  const { run, events, connection, error, send, abort, refresh } = useRunStream(runId, onActivity);
+  const navigate = useNavigate();
+  const { run, events, connection, error, send, reopen, abort, refresh } = useRunStream(runId, onActivity);
 
   useEffect(() => {
     onConnectionChange?.(connection);
   }, [connection, onConnectionChange]);
 
-  if (!runId) {
-    return <EmptyAnvil />;
+  const controlsActive = run ? CONTROLLABLE.includes(run.status) : false;
+  const canReopen = run ? TERMINAL.includes(run.status) : false;
+  const composerEnabled = controlsActive || canReopen;
+
+  async function handleTerminalFollowUp(mode: TerminalFollowUpMode, message: string): Promise<void> {
+    if (!run) return;
+    if (mode === "same_run") {
+      await reopen(message);
+      onActivity?.();
+      return;
+    }
+    const linkedRun = await createRun({
+      title: `Follow-up: ${run.title}`,
+      repoKey: run.repoKey,
+      adapter: run.adapter,
+      prompt: buildLinkedRunPrompt(run, message),
+    });
+    onActivity?.();
+    await navigate({ to: "/runs/$runId", params: { runId: linkedRun.id } });
   }
 
-  const controlsActive =
-    run?.status === "running" ||
-    run?.status === "preparing" ||
-    run?.status === "fixing" ||
-    run?.status === "waiting_for_control";
+  function focusComposer(): void {
+    document.getElementById("run-control-message")?.focus();
+  }
 
   return (
     <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
-      <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-background px-4 sm:px-5">
-        <div className="flex min-w-0 flex-1 items-center gap-2.5">
-          {run ? (
+      <PageHeader
+        primary={
+          <>
+            {run ? (
+              <PageTitle title={run.title} />
+            ) : (
+              <div className="min-w-0 flex-1" aria-label="Loading run">
+                <div className="h-6 w-64 max-w-full rounded-md bg-accent motion-safe:animate-pulse" />
+              </div>
+            )}
+            {run ? <StatusPill status={run.status} className="shrink-0" /> : null}
+            {canReopen ? (
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                className="shrink-0"
+                onClick={focusComposer}
+              >
+                <RotateCcw className="size-3.5" />
+                Reopen
+              </Button>
+            ) : null}
+            <Button
+              variant="ghost"
+              size="icon"
+              type="button"
+              className="size-8 shrink-0"
+              onClick={() => void refresh()}
+              disabled={!run}
+              aria-label="Refresh run"
+            >
+              <RefreshCw className="size-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              type="button"
+              className="size-8 shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => void abort()}
+              disabled={!controlsActive}
+              aria-label="Abort run"
+            >
+              <Power className="size-3.5" />
+            </Button>
+          </>
+        }
+        secondary={
+          run ? (
             <>
-              <h2 className="min-w-0 truncate text-sm font-semibold tracking-tight text-foreground">
-                {run.title}
-              </h2>
-              <span className="hidden rounded-md border border-border bg-accent px-2 py-0.5 text-[11px] font-medium text-muted-foreground sm:inline-flex">
-                {run.repoKey}
-              </span>
+              <Chip tone="muted" icon={<Folder />}>
+                {repoLabel(run.repoKey)}
+              </Chip>
               {run.source ? (
                 run.source.url ? (
-                  <a
-                    href={run.source.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="hidden max-w-[190px] items-center gap-1 truncate rounded-md border border-border bg-card px-2 py-0.5 text-[11px] font-medium text-muted-foreground hover:text-foreground md:inline-flex"
-                  >
-                    <span className="truncate">{sourceLabel(run.sourceType, run.source.key)}</span>
-                    <ExternalLink className="size-3 shrink-0" />
-                  </a>
-                ) : (
-                  <span className="hidden max-w-[190px] truncate rounded-md border border-border bg-card px-2 py-0.5 text-[11px] font-medium text-muted-foreground md:inline-flex">
+                  <Chip tone="muted" icon={<Link2 />} href={run.source.url} external>
                     {sourceLabel(run.sourceType, run.source.key)}
-                  </span>
+                  </Chip>
+                ) : (
+                  <Chip tone="muted" icon={<Link2 />}>
+                    {sourceLabel(run.sourceType, run.source.key)}
+                  </Chip>
                 )
               ) : null}
               {run.pullRequest ? (
-                <a
-                  href={run.pullRequest.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="hidden max-w-[150px] items-center gap-1 truncate rounded-md border border-jade/30 bg-jade/10 px-2 py-0.5 text-[11px] font-medium text-jade hover:text-jade md:inline-flex"
-                >
-                  <span className="truncate">PR {run.pullRequest.number ? `#${run.pullRequest.number}` : run.pullRequest.branch}</span>
-                  <ExternalLink className="size-3 shrink-0" />
-                </a>
+                <Chip tone="jade" icon={<GitPullRequest />} href={run.pullRequest.url} external>
+                  PR {run.pullRequest.number ? `#${run.pullRequest.number}` : run.pullRequest.branch}
+                </Chip>
               ) : null}
-              <StatusPill status={run.status} className="hidden lg:inline-flex" />
-              <span className="hidden text-[11px] text-muted-foreground/55 xl:inline">
+              <span className="ml-auto font-mono text-sm text-subtle-foreground">
                 {shortId(run.id)} · {formatRelativeTime(run.updatedAt)}
               </span>
             </>
-          ) : (
-            <p className="text-xs text-muted-foreground">Loading...</p>
-          )}
-        </div>
-
-        <div className="flex shrink-0 items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            type="button"
-            className="size-8"
-            onClick={() => void refresh()}
-            disabled={!run}
-            aria-label="Refresh run"
-          >
-            <RefreshCw className="size-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            type="button"
-            className="size-8 text-muted-foreground hover:text-destructive"
-            onClick={() => void abort()}
-            disabled={!controlsActive}
-            aria-label="Abort run"
-          >
-            <Power className="size-3.5" />
-          </Button>
-        </div>
-      </header>
+          ) : undefined
+        }
+      />
 
       {run?.error ? (
-        <div className="border-b border-destructive/25 bg-destructive/10 px-5 py-2 text-xs text-destructive">
+        <div className="border-b border-destructive/25 bg-destructive/10 px-6 py-2.5 text-sm text-destructive">
           {run.error}
         </div>
       ) : null}
 
       <div className="relative min-h-0 flex-1 overflow-hidden">
-        <div className="mx-auto h-full w-full max-w-[960px] px-4 sm:px-6">
+        <div className="mx-auto h-full w-full max-w-[1024px] px-6">
           <EventStream events={events} emptyHint="No events yet." />
         </div>
       </div>
 
       {error ? (
-        <div className="border-t border-destructive/25 bg-destructive/10 px-5 py-2 text-xs text-destructive">
+        <div className="border-t border-destructive/25 bg-destructive/10 px-6 py-2.5 text-sm text-destructive">
           {error}
         </div>
       ) : null}
 
-      <div className="shrink-0 px-4 pb-3 pt-2 sm:px-6">
-        <div className="mx-auto w-full max-w-[960px]">
-          <ControlBar adapter={run?.adapter} disabled={!controlsActive} onSend={send} />
-          <div className="mt-2 flex items-center justify-between px-1 text-[11px] text-muted-foreground/55">
-            <span className="inline-flex min-w-0 items-center gap-1.5">
-              <Folder className="size-3.5" />
-              Local checkout
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <SquareTerminal className="size-3.5" />
-              {events.length.toString().padStart(3, "0")} events
-              <PanelRight className="ml-2 size-3.5" />
-              {connection}
-            </span>
-          </div>
+      <div className="shrink-0 px-6 pb-4 pt-2">
+        <div className="mx-auto w-full max-w-[1024px]">
+          <ControlBar
+            adapter={run?.adapter}
+            disabled={!composerEnabled}
+            terminal={canReopen}
+            onSend={send}
+            onTerminalSubmit={handleTerminalFollowUp}
+          />
         </div>
       </div>
     </section>
   );
 }
 
-function sourceLabel(sourceType: string, key: string): string {
+function sourceLabel(sourceType: RunSourceType, key: string): string {
   if (sourceType === "github_issue") return `GitHub ${key}`;
   if (sourceType === "jira") return `Jira ${key}`;
   return key;
 }
 
-function EmptyAnvil() {
-  return (
-    <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
-      <header className="flex h-14 shrink-0 items-center border-b border-border px-5">
-        <p className="text-sm font-medium text-muted-foreground">Select a thread</p>
-      </header>
-      <div className="flex flex-1 items-center justify-center p-8">
-        <div className="max-w-sm text-center">
-          <div className="mx-auto mb-4 grid size-10 place-items-center rounded-2xl border border-border bg-card text-muted-foreground">
-            <SquareTerminal className="size-5" />
-          </div>
-          <h1 className="text-sm font-semibold text-foreground">No thread selected</h1>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Pick a run from the sidebar or start a new one from Projects.
-          </p>
-        </div>
-      </div>
-    </section>
-  );
+function buildLinkedRunPrompt(run: RunRecord, message: string): string {
+  return [
+    `This is a new TaskSmith run created as a follow-up to run ${run.id}.`,
+    `Previous title: ${run.title}`,
+    `Previous status: ${run.status}`,
+    `Repository: ${run.repoKey}`,
+    run.pullRequest ? `Previous pull request: ${run.pullRequest.url}` : "Previous pull request: none recorded",
+    run.source?.url ? `Previous source: ${run.source.url}` : undefined,
+    "",
+    "Use the previous run as context, but treat this as a fresh chat and fresh workspace.",
+    "Do not assume uncommitted files from the previous workspace are present unless you inspect or fetch them through the linked PR/source.",
+    "Make the smallest correct change, then stop. TaskSmith will handle verification, review, and delivery.",
+    "",
+    "Operator follow-up request:",
+    message,
+  ].filter((line): line is string => line !== undefined).join("\n");
+}
+
+function repoLabel(repoKey: string): string {
+  if (repoKey.toLowerCase() === "tasksmith") return "TaskSmith";
+  return repoKey
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
 }

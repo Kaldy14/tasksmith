@@ -40,6 +40,7 @@ async function main(): Promise<void> {
   const crStatePath = path.join(tempDir, "cr-state.json");
   const remoteRepoDir = path.join(tempDir, "remote.git");
   const squashRemoteRepoDir = path.join(tempDir, "squash-remote.git");
+  const feedbackRemoteRepoDir = path.join(tempDir, "feedback-remote.git");
   const configPath = path.join(tempDir, "tasksmith-config.json");
   const port = 36_210 + Math.floor(Math.random() * 1000);
 
@@ -48,7 +49,8 @@ async function main(): Promise<void> {
   await writeFakeCr(path.join(binDir, "cr"), crLogPath, crStatePath);
   await createBareFixtureRemote(tempDir, remoteRepoDir);
   await createBareFixtureRemote(tempDir, squashRemoteRepoDir);
-  await writeFile(configPath, JSON.stringify(buildConfig(pathToFileURL(remoteRepoDir).href, pathToFileURL(squashRemoteRepoDir).href), null, 2), "utf8");
+  await createBareFixtureRemote(tempDir, feedbackRemoteRepoDir);
+  await writeFile(configPath, JSON.stringify(buildConfig(pathToFileURL(remoteRepoDir).href, pathToFileURL(squashRemoteRepoDir).href, pathToFileURL(feedbackRemoteRepoDir).href), null, 2), "utf8");
 
   const server = spawn(tsxBin, [serverScript], {
     cwd: rootDir,
@@ -119,6 +121,23 @@ async function main(): Promise<void> {
     assert(squashCompleted.run.pullRequest === undefined, "squash merge run should not record a pull request");
     await assertRemoteBranchContainsChange(squashRemoteRepoDir, "main", tempDir, "assert-squash-clone");
 
+    const feedbackCreated = await postJson<RunResponse>(`${baseUrl}/api/runs`, {
+      title: "Delivery CodeRabbit PR feedback e2e",
+      repoKey: "feedback-e2e",
+      adapter: "demo",
+      prompt: "TASKSMITH_DEMO_WRITE_CHANGE TASKSMITH_DEMO_FIX_CI Produce a deterministic change and address post-PR CodeRabbit feedback.",
+    });
+    const feedbackCompleted = await waitForRunStatus(baseUrl, feedbackCreated.run.id, "pr_created", 60_000);
+    assertEqual(feedbackCompleted.run.currentAttemptId, "attempt-2", "CodeRabbit PR feedback should create a bounded follow-up attempt");
+    assertEqual(feedbackCompleted.run.ciFixAttempts, 1, "CodeRabbit PR feedback should use the post-PR fix budget");
+    const feedbackPr = feedbackCompleted.run.pullRequest;
+    assert(feedbackPr !== undefined, "feedback run should record its PR");
+    assertEqual(feedbackPr.url, "https://github.com/octo/feedback-fixture/pull/456", "feedback pull request url");
+    await assertRemoteBranchContainsChange(feedbackRemoteRepoDir, feedbackPr.branch, tempDir, "assert-feedback-clone");
+    await assertRemoteBranchContainsCiFix(feedbackRemoteRepoDir, feedbackPr.branch, tempDir, "assert-feedback-ci-fix-clone");
+    const feedbackEvents = await getJson<EventsResponse>(`${baseUrl}/api/runs/${feedbackCreated.run.id}/events`);
+    assert(JSON.stringify(feedbackEvents).includes("CodeRabbit review left actionable comments"), "events should include CodeRabbit PR feedback detection");
+
     const squashEvents = await getJson<EventsResponse>(`${baseUrl}/api/runs/${squashCreated.run.id}/events`);
     const squashEventText = JSON.stringify(squashEvents);
     assert(squashEventText.includes('"mode":"squash_merge_main"'), "events should include squash_merge_main delivery mode");
@@ -127,8 +146,8 @@ async function main(): Promise<void> {
     assert(squashEventText.includes("CodeRabbit CLI review skipped because CodeRabbit reported a rate limit"), "rate-limited CodeRabbit review should be skipped before squash merge");
 
     const ghLog = await readFile(ghLogPath, "utf8");
-    assert(countOccurrences(ghLog, '"pr","create"') === 1, "gh pr create should only be called for ready_pr delivery");
-    assert(countOccurrences(ghLog, '"pr","checks"') >= 2, "gh pr checks should be polled before and after CI fix");
+    assert(countOccurrences(ghLog, '"pr","create"') === 2, "gh pr create should be called for both ready_pr delivery runs");
+    assert(countOccurrences(ghLog, '"pr","checks"') >= 4, "gh pr checks should be polled before and after post-PR fixups");
     assert(ghLog.includes('"run","view"'), "failed CI logs should be fetched");
     assert(!ghLog.includes('"--draft"'), "gh pr create must not use --draft");
     assert(ghLog.includes("ready-to-review"), "gh pr create body should say ready-to-review");
@@ -155,7 +174,7 @@ async function main(): Promise<void> {
   }
 }
 
-function buildConfig(remoteUrl: string, squashRemoteUrl: string): unknown {
+function buildConfig(remoteUrl: string, squashRemoteUrl: string, feedbackRemoteUrl: string): unknown {
   return {
     workflow: {
       type: "single_task_sandcastle",
@@ -202,6 +221,19 @@ function buildConfig(remoteUrl: string, squashRemoteUrl: string): unknown {
           },
         ],
       },
+      "feedback-e2e": {
+        displayName: "Post-PR Feedback E2E",
+        gitUrl: feedbackRemoteUrl,
+        defaultBranch: "main",
+        gitProvider: { type: "github", owner: "octo", repo: "feedback-fixture", ghConfigDir: "/tmp/fake-gh-config" },
+        verify: [
+          {
+            name: "feedback-change-exists",
+            command: `${JSON.stringify(process.execPath)} -e ${JSON.stringify("const fs=require('fs'); if (!fs.existsSync('TASKSMITH_DEMO_CHANGE.txt')) process.exit(2); console.log('FEEDBACK_CHANGE_OK');")}`,
+            timeoutMs: 30_000,
+          },
+        ],
+      },
     },
   };
 }
@@ -221,11 +253,21 @@ if (args.includes('--draft')) {
   process.exit(8);
 }
 if (args[0] === 'pr' && args[1] === 'create') {
-  console.log('https://github.com/octo/delivery-fixture/pull/123');
+  const state = readState();
+  state.prCreates = (state.prCreates || 0) + 1;
+  writeState(state);
+  console.log(state.prCreates === 1 ? 'https://github.com/octo/delivery-fixture/pull/123' : 'https://github.com/octo/feedback-fixture/pull/456');
   process.exit(0);
 }
 if (args[0] === 'pr' && args[1] === 'checks') {
   const state = readState();
+  const prRef = args[2];
+  if (prRef === '456') {
+    state.feedbackChecks = (state.feedbackChecks || 0) + 1;
+    writeState(state);
+    console.log(JSON.stringify([{ name: 'ci / test', bucket: 'pass', state: 'completed', link: 'https://github.com/octo/feedback-fixture/actions/runs/456' }]));
+    process.exit(0);
+  }
   state.checks = (state.checks || 0) + 1;
   writeState(state);
   if (state.checks === 1) {
@@ -234,6 +276,31 @@ if (args[0] === 'pr' && args[1] === 'checks') {
   }
   console.log(JSON.stringify([{ name: 'ci / test', bucket: 'pass', state: 'completed', conclusion: 'success', detailsUrl: 'https://github.com/octo/delivery-fixture/actions/runs/988' }]));
   process.exit(0);
+}
+if (args[0] === 'api') {
+  const state = readState();
+  const route = args[1] || '';
+  if (route === 'repos/octo/delivery-fixture/pulls/123') {
+    console.log(JSON.stringify({ head: { sha: '1111111111111111111111111111111111111111' } }));
+    process.exit(0);
+  }
+  if (route === 'repos/octo/delivery-fixture/pulls/123/reviews') {
+    console.log('[]');
+    process.exit(0);
+  }
+  if (route === 'repos/octo/feedback-fixture/pulls/456') {
+    const sha = (state.feedbackChecks || 0) <= 1 ? '2222222222222222222222222222222222222222' : '3333333333333333333333333333333333333333';
+    console.log(JSON.stringify({ head: { sha } }));
+    process.exit(0);
+  }
+  if (route === 'repos/octo/feedback-fixture/pulls/456/reviews') {
+    if ((state.feedbackChecks || 0) <= 1) {
+      console.log(JSON.stringify([{ user: { login: 'coderabbitai[bot]' }, commit_id: '2222222222222222222222222222222222222222', html_url: 'https://github.com/octo/feedback-fixture/pull/456#pullrequestreview-1', body: '<details><summary>⚠️ Actionable comments (1)</summary></details><details><summary>🤖 Prompt for all review comments with AI agents</summary>\`\`\`\\nFix the still-valid CodeRabbit issue.\\n\`\`\`</details>' }]));
+      process.exit(0);
+    }
+    console.log('[]');
+    process.exit(0);
+  }
 }
 if (args[0] === 'run' && args[1] === 'view') {
   console.log('ci / test failed because TASKSMITH_DEMO_CI_FIXED.txt was missing');
@@ -306,8 +373,8 @@ async function assertRemoteBranchContainsVerifierFix(remoteRepoDir: string, bran
   assert(change.includes("Demo verifier fix created"), "remote PR branch should contain verifier fix commit");
 }
 
-async function assertRemoteBranchContainsCiFix(remoteRepoDir: string, branch: string, tempDir: string): Promise<void> {
-  const cloneDir = path.join(tempDir, "assert-ci-fix-clone");
+async function assertRemoteBranchContainsCiFix(remoteRepoDir: string, branch: string, tempDir: string, cloneName = "assert-ci-fix-clone"): Promise<void> {
+  const cloneDir = path.join(tempDir, cloneName);
   await runGit(["clone", "--branch", branch, remoteRepoDir, cloneDir], tempDir);
   const change = await readFile(path.join(cloneDir, "TASKSMITH_DEMO_CI_FIXED.txt"), "utf8");
   assert(change.includes("Demo CI fix created"), "remote PR branch should contain CI fix commit");

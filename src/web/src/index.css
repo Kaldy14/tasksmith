@@ -69,43 +69,43 @@
   color-scheme: dark;
   --radius: 0.625rem;
 
-  --background: oklch(0.135 0.008 65);
-  --foreground: oklch(0.965 0.004 65);
+  --background: oklch(0.125 0.012 58);
+  --foreground: oklch(0.972 0.006 65);
 
-  --surface-1: oklch(0.165 0.008 65);
-  --surface-2: oklch(0.195 0.009 65);
+  --surface-1: oklch(0.17 0.014 58);
+  --surface-2: oklch(0.215 0.016 58);
 
   --card: var(--surface-1);
-  --card-foreground: oklch(0.965 0.004 65);
-  --popover: oklch(0.185 0.008 65);
-  --popover-foreground: oklch(0.965 0.004 65);
+  --card-foreground: oklch(0.972 0.006 65);
+  --popover: oklch(0.2 0.012 58);
+  --popover-foreground: oklch(0.972 0.006 65);
 
-  --primary: oklch(0.72 0.175 60);
-  --primary-foreground: oklch(0.16 0.018 65);
+  --primary: oklch(0.76 0.205 56);
+  --primary-foreground: oklch(0.145 0.024 58);
 
-  --secondary: oklch(1 0 0 / 0.06);
-  --secondary-foreground: oklch(0.965 0.004 65);
-  --muted: oklch(1 0 0 / 0.05);
-  --muted-foreground: oklch(0.68 0.008 65);
-  --accent: oklch(1 0 0 / 0.07);
-  --accent-foreground: oklch(0.965 0.004 65);
-  --subtle-foreground: oklch(0.52 0.008 65);
+  --secondary: oklch(1 0 0 / 0.08);
+  --secondary-foreground: oklch(0.972 0.006 65);
+  --muted: oklch(1 0 0 / 0.065);
+  --muted-foreground: oklch(0.74 0.012 65);
+  --accent: oklch(1 0 0 / 0.095);
+  --accent-foreground: oklch(0.972 0.006 65);
+  --subtle-foreground: oklch(0.58 0.012 65);
 
-  --destructive: oklch(0.66 0.215 25);
+  --destructive: oklch(0.68 0.23 25);
   --destructive-foreground: oklch(0.98 0.005 65);
 
-  --border: oklch(1 0 0 / 0.085);
-  --border-strong: oklch(1 0 0 / 0.16);
-  --input: oklch(1 0 0 / 0.11);
-  --ring: oklch(0.72 0.175 60 / 0.55);
+  --border: oklch(1 0 0 / 0.11);
+  --border-strong: oklch(1 0 0 / 0.2);
+  --input: oklch(1 0 0 / 0.14);
+  --ring: oklch(0.76 0.205 56 / 0.65);
 
-  --heat: oklch(0.72 0.175 60);
-  --heat-foreground: oklch(0.16 0.018 65);
-  --heat-muted: oklch(0.72 0.175 60 / 0.14);
-  --heat-glow: oklch(0.72 0.175 60 / 0.42);
-  --copper: oklch(0.72 0.14 45);
-  --jade: oklch(0.74 0.135 160);
-  --steel: oklch(0.68 0.13 254);
+  --heat: oklch(0.76 0.205 56);
+  --heat-foreground: oklch(0.145 0.024 58);
+  --heat-muted: oklch(0.76 0.205 56 / 0.2);
+  --heat-glow: oklch(0.76 0.205 56 / 0.55);
+  --copper: oklch(0.76 0.17 42);
+  --jade: oklch(0.78 0.16 158);
+  --steel: oklch(0.73 0.16 252);
 
   --duration-quick: 120ms;
   --duration-base: 200ms;

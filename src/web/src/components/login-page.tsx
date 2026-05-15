@@ -1,7 +1,7 @@
 import { FormEvent, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { Hammer } from "lucide-react";
 import { authClient } from "@/auth-client";
+import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -42,18 +42,16 @@ export function LoginPage() {
 
   return (
     <div className="grid min-h-screen place-items-center bg-background px-4 text-foreground">
-      <Card className="w-full max-w-sm border-border/80 bg-card/80 shadow-2xl shadow-black/10">
+      <Card className="w-full max-w-sm border-border-strong bg-surface-1 shadow-2xl shadow-black/10 backdrop-blur-none">
         <CardHeader className="space-y-3">
-          <div className="grid size-10 place-items-center rounded-2xl bg-primary/15 text-primary">
-            <Hammer className="size-5" />
-          </div>
+          <BrandMark size="lg" />
           <div className="space-y-1">
             <CardTitle>Sign in to TaskSmith</CardTitle>
-            <CardDescription>Use the bootstrap admin account for this deployment.</CardDescription>
+            <CardDescription className="text-sm">Use the bootstrap admin account for this deployment.</CardDescription>
           </div>
         </CardHeader>
         <CardContent>
-          <form className="space-y-4" onSubmit={(event) => void onSubmit(event)}>
+          <form className="space-y-4 text-sm" onSubmit={(event) => void onSubmit(event)}>
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -78,7 +76,7 @@ export function LoginPage() {
             </div>
             {error ? (
               <p
-                className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+                className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
                 role="alert"
                 aria-live="polite"
               >

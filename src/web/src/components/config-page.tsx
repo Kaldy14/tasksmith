@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Check, FileCog, Loader2, Save } from "lucide-react";
+import { AlertTriangle, Check, Loader2, Save } from "lucide-react";
 import { getEditableConfig, saveEditableConfig } from "@/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader, PageTitle } from "@/components/ui/page-header";
 import { Textarea } from "@/components/ui/textarea";
 import type { EditableConfigResponse } from "@/types";
+
+const CARD_CLASS = "border-border-strong bg-surface-2 shadow-none backdrop-blur-none";
 
 export function ConfigPage() {
   const [response, setResponse] = useState<EditableConfigResponse | undefined>();
@@ -73,42 +76,59 @@ export function ConfigPage() {
 
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
-      <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-background px-4 sm:px-5">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="grid size-8 place-items-center rounded-xl border border-border bg-card text-muted-foreground">
-            <FileCog className="size-4" />
-          </span>
-          <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold tracking-tight text-foreground">Project configuration</h2>
-            <p className="truncate text-[11px] text-muted-foreground/65">
-              {response?.path ?? "No TASKSMITH_CONFIG_PATH configured"}
-            </p>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={formatJson} disabled={loading || saving || !text}>
-            Format JSON
-          </Button>
-          <Button type="button" variant="heat" size="sm" onClick={() => void save()} disabled={loading || saving || !response?.writable || !parsed.ok}>
-            {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
-            Save
-          </Button>
-        </div>
-      </header>
+      <PageHeader
+        primary={
+          <>
+            <PageTitle
+              title="Project configuration"
+              subtitle={response?.path ?? "No TASKSMITH_CONFIG_PATH configured"}
+            />
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={formatJson}
+                disabled={loading || saving || !text}
+              >
+                Format JSON
+              </Button>
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
+                onClick={() => void save()}
+                disabled={loading || saving || !response?.writable || !parsed.ok}
+              >
+                {saving ? <Loader2 className="size-3.5 motion-safe:animate-spin" /> : <Save className="size-3.5" />}
+                Save
+              </Button>
+            </div>
+          </>
+        }
+      />
 
       <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
         <div className="mx-auto grid w-full max-w-6xl gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <Card className="min-w-0">
+          <Card className={`min-w-0 ${CARD_CLASS}`}>
             <CardHeader>
-              <CardTitle className="text-base">Editable config JSON</CardTitle>
-              <CardDescription>
+              <CardTitle className="text-h2">Editable config JSON</CardTitle>
+              <CardDescription className="text-sm">
                 Define repos, delivery mode, verification, and per-project init commands that run after checkout and before Pi starts.
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-3">
+              {!response?.writable && !loading ? (
+                <div className="rounded-lg border border-heat/35 bg-heat/10 p-3 text-sm leading-5 text-heat">
+                  <div className="mb-1 flex items-center gap-2 font-medium">
+                    <AlertTriangle className="size-3.5" /> Read-only
+                  </div>
+                  Set `TASKSMITH_CONFIG_PATH` to enable saving config changes from the UI.
+                </div>
+              ) : null}
               {loading ? (
                 <div className="flex h-96 items-center justify-center text-sm text-muted-foreground">
-                  <Loader2 className="mr-2 size-4 animate-spin" /> Loading config...
+                  <Loader2 className="mr-2 size-4 motion-safe:animate-spin" /> Loading config...
                 </div>
               ) : (
                 <Textarea
@@ -118,7 +138,7 @@ export function ConfigPage() {
                     setSaved(undefined);
                   }}
                   spellCheck={false}
-                  className="min-h-[62vh] resize-none font-mono text-xs leading-5"
+                  className="min-h-[62vh] resize-none font-mono text-sm leading-5"
                   aria-label="TaskSmith config JSON"
                 />
               )}
@@ -126,36 +146,36 @@ export function ConfigPage() {
           </Card>
 
           <aside className="space-y-4">
-            <Card>
+            <Card className={CARD_CLASS}>
               <CardHeader>
                 <CardTitle className="text-sm">Init commands</CardTitle>
-                <CardDescription className="text-xs">
+                <CardDescription className="text-sm">
                   Add `initCommands` to a repo. They run in the per-run workspace before implementation.
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <pre className="overflow-auto rounded-lg border border-border bg-background p-3 text-[11px] leading-5 text-muted-foreground">{`"initCommands": [
+                <pre className="overflow-auto rounded-lg border border-border bg-background p-3 font-mono text-sm leading-5 text-muted-foreground">{`"initCommands": [
   {
     "name": "install",
     "command": "pnpm install --frozen-lockfile",
     "timeoutMs": 300000
   }
 ]`}</pre>
-                <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                <p className="mt-3 text-sm leading-5 text-muted-foreground">
                   TaskSmith also excludes `.env`, `.env.*`, `node_modules/`, and `.pnpm-store/` from Git in each checkout to reduce accidental PR leakage.
                 </p>
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className={CARD_CLASS}>
               <CardHeader>
                 <CardTitle className="text-sm">Delivery</CardTitle>
-                <CardDescription className="text-xs">
+                <CardDescription className="text-sm">
                   Configure globally or per repo with `workflow.deliveryMode`.
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <pre className="overflow-auto rounded-lg border border-border bg-background p-3 text-[11px] leading-5 text-muted-foreground">{`"workflow": {
+                <pre className="overflow-auto rounded-lg border border-border bg-background p-3 font-mono text-sm leading-5 text-muted-foreground">{`"workflow": {
   "type": "single_task_sandcastle",
   "stages": ["plan", "implement", "deep_review", "fix", "deliver"],
   "maxFixAttempts": 1,
@@ -165,20 +185,15 @@ export function ConfigPage() {
             </Card>
 
             {error ? (
-              <div className="rounded-xl border border-destructive/35 bg-destructive/10 p-3 text-xs leading-5 text-destructive">
+              <div className="rounded-xl border border-destructive/35 bg-destructive/10 p-3 text-sm leading-5 text-destructive">
                 <div className="mb-1 flex items-center gap-2 font-medium"><AlertTriangle className="size-3.5" /> Config error</div>
                 {error}
               </div>
             ) : null}
             {saved ? (
-              <div className="rounded-xl border border-jade/35 bg-jade/10 p-3 text-xs leading-5 text-jade">
+              <div className="rounded-xl border border-jade/35 bg-jade/10 p-3 text-sm leading-5 text-jade">
                 <div className="mb-1 flex items-center gap-2 font-medium"><Check className="size-3.5" /> Saved</div>
                 {saved}
-              </div>
-            ) : null}
-            {!response?.writable && !loading ? (
-              <div className="rounded-xl border border-heat/35 bg-heat/10 p-3 text-xs leading-5 text-heat">
-                Set `TASKSMITH_CONFIG_PATH` to enable saving config changes from the UI.
               </div>
             ) : null}
           </aside>

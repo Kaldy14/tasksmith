@@ -52,6 +52,7 @@ export function loadConfig(): AppConfig {
     repositories: fileConfig?.repos ?? {},
     sourceFlow: fileConfig?.sourceFlow ?? defaultSourceFlow(),
     githubWebhooks: parseGitHubWebhookConfig(),
+    jiraWebhooks: parseJiraWebhookConfig(),
     workflow: fileConfig?.workflow ?? defaultWorkflow(),
     verification: parseVerificationConfig(fileConfig?.defaultVerify),
     queue,
@@ -63,6 +64,14 @@ function parseGitHubWebhookConfig(): AppConfig["githubWebhooks"] {
   if (!enabled) return { enabled: false };
   const signingKey = process.env[["TASKSMITH", "GITHUB", "WEBHOOK", "SECRET"].join("_")]?.trim();
   if (!signingKey || Buffer.byteLength(signingKey, "utf8") < 16) throw new Error("GitHub webhook signing key must be at least 16 bytes when enabled");
+  return { enabled: true, signingKey };
+}
+
+function parseJiraWebhookConfig(): AppConfig["jiraWebhooks"] {
+  const enabled = parseBooleanEnv(process.env[["TASKSMITH", "JIRA", "WEBHOOK", "ENABLED"].join("_")]);
+  if (!enabled) return { enabled: false };
+  const signingKey = process.env[["TASKSMITH", "JIRA", "WEBHOOK", "SECRET"].join("_")]?.trim();
+  if (!signingKey || Buffer.byteLength(signingKey, "utf8") < 16) throw new Error("Jira webhook signing key must be at least 16 bytes when enabled");
   return { enabled: true, signingKey };
 }
 
@@ -157,6 +166,7 @@ function applyParsedConfig(config: AppConfig, parsed: ParsedConfigFile): void {
   Object.assign(config.repositories, parsed.repos);
   config.sourceFlow = parsed.sourceFlow ?? defaultSourceFlow();
   config.githubWebhooks = parseGitHubWebhookConfig();
+  config.jiraWebhooks = parseJiraWebhookConfig();
   config.workflow = parsed.workflow ?? defaultWorkflow();
   config.verification.defaultCommands = parseDefaultVerificationCommands(parsed.defaultVerify);
   config.queue = parseQueueLeaseConfig(parsed.queue);
