@@ -169,6 +169,71 @@ cp -R ${shellQuote(`${fixtureDir}/.`)} "$destination/"
     untrustedApprovalRejected,
     "baseline approval outside the trusted proxy should be rejected",
   );
+
+  const erroredReportDir = path.join(reportsDir, "run-124-1");
+  await mkdir(path.join(erroredReportDir, "screenshots"), { recursive: true });
+  await writeFile(
+    path.join(erroredReportDir, "tasksmith-report.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      reportId: "run-124-1",
+      repository: "VosoBrands/hive-e2e",
+      runId: 124,
+      runAttempt: 1,
+      sha: "b".repeat(40),
+      workflowUrl:
+        "https://github.com/VosoBrands/hive-e2e/actions/runs/124",
+      receivedAt: "2026-07-29T13:00:00.000Z",
+    }),
+    "utf8",
+  );
+  await writeFile(
+    path.join(erroredReportDir, "summary.json"),
+    JSON.stringify({
+      ...summary,
+      visual: { ...summary.visual, status: "error", errors: 1 },
+    }),
+    "utf8",
+  );
+  await writeFile(
+    path.join(erroredReportDir, "screenshots", "errored-visual-chromium.png"),
+    "fake png",
+    "utf8",
+  );
+  await writeFile(
+    path.join(erroredReportDir, "screenshots", "errored-visual-chromium.json"),
+    JSON.stringify({ schemaVersion: 1, captures: [] }),
+    "utf8",
+  );
+  let erroredApprovalRejected = false;
+  try {
+    await handleQualityBaselineApproval(
+      config,
+      { "x-tasksmith-quality-proxy": "verified" },
+      Buffer.from(JSON.stringify({ reportId: "run-124-1" })),
+    );
+  } catch (error: unknown) {
+    erroredApprovalRejected =
+      error instanceof Error &&
+      "statusCode" in error &&
+      error.statusCode === 409;
+  }
+  assert(
+    erroredApprovalRejected,
+    "reports with visual runner errors should not be approved",
+  );
+  assertEqual(
+    (
+      JSON.parse(
+        await readFile(
+          path.join(reportsDir, "approved-baseline", "baseline.json"),
+          "utf8",
+        ),
+      ) as { sourceReportId: string }
+    ).sourceReportId,
+    "run-123-1",
+    "rejected approval should preserve the previous baseline",
+  );
   const legacyReportDir = path.join(reportsDir, "run-122-1");
   await mkdir(legacyReportDir, { recursive: true });
   await writeFile(
