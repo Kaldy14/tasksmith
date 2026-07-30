@@ -35,6 +35,14 @@ Backend may hold:
 - encryption keys,
 - webhook secrets.
 
+Quality reports are exposed through a separate Basic Auth path. The approval
+endpoint is intentionally outside Better Auth because it is used by that static
+report UI, but it accepts requests only when the loopback Caddy proxy injects
+`X-TaskSmith-Quality-Proxy: verified`. Caddy must strip that header from the
+general public reverse proxy so clients cannot spoof it. The TaskSmith service
+must remain bound to loopback, and report credentials must be stored as GitHub
+Actions secrets rather than committed.
+
 Agent sandbox may receive:
 
 - narrow Pi auth/session files if required,

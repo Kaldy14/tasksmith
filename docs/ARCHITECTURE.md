@@ -377,6 +377,27 @@ repos:
         command: pnpm test
 ```
 
+## Informational quality reports
+
+TaskSmith can accept a signed quality-audit webhook, download the matching
+GitHub Actions artifact, host it from `qualityAudit.reportsDir`, and notify a
+Slack channel. Reports are informational and do not change TaskSmith Run state.
+
+Visual baselines use an explicit approval model:
+
+- a report is never promoted automatically;
+- the hosted gallery sends an approval request through the Basic Auth report
+  proxy;
+- TaskSmith atomically replaces `approved-baseline/` with the report's current
+  screenshots and manifests;
+- reports with visual runner errors cannot be approved;
+- the E2E workflow downloads the approved PNGs into ignored runtime snapshot
+  directories before comparison.
+
+Normal timestamped reports remain subject to deployment retention. The
+`approved-baseline` directory is persistent and replaced only by an explicit
+approval.
+
 ## Design principles
 
 - Backend controls Jira and Git provider APIs.

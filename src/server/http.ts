@@ -12,6 +12,8 @@ import type { SourcePoller } from "../sources/source-poller.js";
 import type { SourceIntakeService } from "../sources/source-intake.js";
 import { handleGitHubIssuesWebhook } from "../sources/github-webhook.js";
 import { handleJiraWebhook } from "../sources/jira-webhook.js";
+import { handleQualityAuditNotification } from "../notifications/quality-audit.js";
+import { handleQualityBaselineApproval } from "../notifications/quality-baseline.js";
 import type { TaskSmithAuthService } from "../auth/tasksmith-auth.js";
 import { readEditableConfig, saveEditableConfig } from "./config.js";
 import { EventHub, sendJson } from "./event-hub.js";
@@ -101,6 +103,42 @@ async function routeHttp(deps: ServerDeps, req: IncomingMessage, res: ServerResp
     } catch (error: unknown) {
       const statusCode = isStatusError(error) ? error.statusCode : 500;
       sendJson(res, statusCode, { error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/webhooks/quality-audit") {
+    try {
+      const rawBody = await readRawBody(req);
+      const result = await handleQualityAuditNotification(
+        deps.config,
+        req.headers,
+        rawBody,
+      );
+      sendJson(res, 202, result);
+    } catch (error: unknown) {
+      const statusCode = isStatusError(error) ? error.statusCode : 500;
+      sendJson(res, statusCode, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/quality-baseline/approve") {
+    try {
+      const rawBody = await readRawBody(req);
+      const result = await handleQualityBaselineApproval(
+        deps.config,
+        req.headers,
+        rawBody,
+      );
+      sendJson(res, 200, result);
+    } catch (error: unknown) {
+      const statusCode = isStatusError(error) ? error.statusCode : 500;
+      sendJson(res, statusCode, {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
     return;
   }
