@@ -224,10 +224,8 @@ async function downloadReport(
     if (JSON.stringify(storedSummary) !== JSON.stringify(payload.summary)) {
       throw statusError("Hosted report summary does not match webhook", 400);
     }
-    await rm(destination, { recursive: true, force: true });
-    await rename(incomingDir, destination);
     await writeFile(
-      path.join(destination, "tasksmith-report.json"),
+      path.join(incomingDir, "tasksmith-report.json"),
       `${JSON.stringify(
         {
           schemaVersion: 1,
@@ -244,7 +242,9 @@ async function downloadReport(
       )}\n`,
       "utf8",
     );
-    await chmod(destination, 0o755);
+    await chmod(incomingDir, 0o755);
+    await rm(destination, { recursive: true, force: true });
+    await rename(incomingDir, destination);
   } catch (error: unknown) {
     await rm(incomingDir, { recursive: true, force: true });
     if (isStatusError(error)) throw error;
@@ -347,6 +347,7 @@ async function notifySlack(
   };
   const response = await fetch(config.slackApiUrl, {
     method: "POST",
+    signal: AbortSignal.timeout(10_000),
     headers: {
       authorization: `Bearer ${config.slackBotToken}`,
       "content-type": "application/json; charset=utf-8",

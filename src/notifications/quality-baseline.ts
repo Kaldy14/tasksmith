@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { Dirent } from "node:fs";
 import {
   chmod,
   cp,
@@ -83,21 +84,23 @@ export async function approveQualityBaseline(
     throw statusError("Invalid quality report path", 400);
   }
   const metadata = parseReportMetadata(
-    JSON.parse(
+    parseJson(
       await readRequiredFile(
         path.join(reportDir, "tasksmith-report.json"),
         "Quality report metadata was not found",
       ),
-    ) as unknown,
+      "Quality report metadata is not valid JSON",
+    ),
     reportId,
   );
   const summary = parseSummary(
-    JSON.parse(
+    parseJson(
       await readRequiredFile(
         path.join(reportDir, "summary.json"),
         "Quality report summary was not found",
       ),
-    ) as unknown,
+      "Quality report summary is not valid JSON",
+    ),
   );
   if (summary.visual.status === "error" || summary.visual.errors > 0) {
     throw statusError(
@@ -107,7 +110,15 @@ export async function approveQualityBaseline(
   }
 
   const screenshotsDir = path.join(reportDir, "screenshots");
-  const entries = await readdir(screenshotsDir, { withFileTypes: true });
+  let entries: Dirent<string>[];
+  try {
+    entries = await readdir(screenshotsDir, { withFileTypes: true });
+  } catch (error: unknown) {
+    if (isMissingFileError(error)) {
+      throw statusError("Quality report screenshots were not found", 404);
+    }
+    throw statusError("Quality report screenshots could not be read", 409);
+  }
   const files = entries
     .filter((entry) => entry.isFile() && entry.name.endsWith(".png"))
     .map((entry) => entry.name)
@@ -181,9 +192,6 @@ async function replaceBaselineDirectory(
     }
     await rename(incomingDir, baselineDir);
     await chmod(baselineDir, 0o755);
-    if (previousMoved) {
-      await rm(previousDir, { recursive: true, force: true });
-    }
   } catch (error: unknown) {
     await rm(incomingDir, { recursive: true, force: true });
     if (previousMoved) {
@@ -191,6 +199,9 @@ async function replaceBaselineDirectory(
       await rename(previousDir, baselineDir);
     }
     throw error;
+  }
+  if (previousMoved) {
+    await rm(previousDir, { recursive: true, force: true }).catch(() => {});
   }
 }
 
@@ -264,6 +275,14 @@ async function readRequiredFile(filePath: string, message: string): Promise<stri
   } catch (error: unknown) {
     if (isMissingFileError(error)) throw statusError(message, 404);
     throw error;
+  }
+}
+
+function parseJson(raw: string, message: string): unknown {
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    throw statusError(message, 409);
   }
 }
 

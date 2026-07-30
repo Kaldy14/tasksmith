@@ -235,9 +235,6 @@ function applyParsedConfig(config: AppConfig, parsed: ParsedConfigFile): void {
   for (const key of Object.keys(config.repositories)) delete config.repositories[key];
   Object.assign(config.repositories, parsed.repos);
   config.sourceFlow = parsed.sourceFlow ?? defaultSourceFlow();
-  config.githubWebhooks = parseGitHubWebhookConfig();
-  config.jiraWebhooks = parseJiraWebhookConfig();
-  config.qualityAudit = parseQualityAuditConfig(config.dataDir);
   config.workflow = parsed.workflow ?? defaultWorkflow();
   config.verification.defaultCommands = parseDefaultVerificationCommands(parsed.defaultVerify);
   config.queue = parseQueueLeaseConfig(parsed.queue);
