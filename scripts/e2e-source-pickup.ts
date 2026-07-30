@@ -293,6 +293,7 @@ function buildFileStoreConfig(tempDir: string): AppConfig {
     sourceFlow: { readinessLabel: "tasksmith", pollIntervalSeconds: 60, jiraRepoRouting: { strategy: "label", labels: {} } },
     githubWebhooks: { enabled: false },
     jiraWebhooks: { enabled: false },
+    qualityAudit: { enabled: false },
     workflow: {
       type: "single_task_sandcastle",
       stages: ["plan", "implement", "deep_review", "fix", "deliver"],

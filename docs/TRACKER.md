@@ -3,7 +3,7 @@
 ## Current status
 
 **Stage:** Phase 8 — hardening foundation  
-**Code status:** Manual Run, verifier, bounded verifier/review/CI fix attempts, source pickup, idempotent GitHub/Jira source status comments, optional GitHub Issues and Jira webhook intake, repo-scoped Jira child Runs, durable scheduler queue, worker leases/heartbeats/recovery, global/per-repo concurrency limits, per-repo init commands, config UI, fresh-context review, optional CodeRabbit CLI review, ready-to-review GitHub PR delivery, Postgres app state, and Better Auth UI/API protection implemented
+**Code status:** Manual Run, verifier, bounded verifier/review/CI fix attempts, source pickup, idempotent GitHub/Jira source status comments, optional GitHub Issues and Jira webhook intake, repo-scoped Jira child Runs, durable scheduler queue, worker leases/heartbeats/recovery, global/per-repo concurrency limits, per-repo init commands, config UI, fresh-context review, optional CodeRabbit CLI review, ready-to-review GitHub PR delivery, Postgres app state, Better Auth UI/API protection, and hosted informational quality reports with explicit visual-baseline approval implemented
 
 **Primary next milestone:** restricted-user/container worker isolation, then deepen Jira lifecycle automation and observability.
 

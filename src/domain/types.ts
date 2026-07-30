@@ -236,6 +236,23 @@ export type JiraWebhookConfig =
   | { enabled: false }
   | { enabled: true; signingKey: string };
 
+export type QualityAuditConfig =
+  | { enabled: false }
+  | {
+      enabled: true;
+      signingKey: string;
+      repository: string;
+      allowedRef: string;
+      ghCommand: string;
+      ghConfigDir: string;
+      reportsDir: string;
+      reportsPublicUrl: string;
+      slackBotToken: string;
+      slackChannelId: string;
+      slackApiUrl: string;
+      notifyOnClean: boolean;
+    };
+
 export type DeliveryMode = "ready_pr" | "squash_merge_main";
 
 export interface CodeRabbitCliConfig {
@@ -409,6 +426,7 @@ export interface AppConfig {
   sourceFlow: SourceFlowConfig;
   githubWebhooks: GitHubWebhookConfig;
   jiraWebhooks: JiraWebhookConfig;
+  qualityAudit: QualityAuditConfig;
   workflow: SingleTaskWorkflowConfig;
   verification: VerificationConfig;
   queue: QueueLeaseConfig;

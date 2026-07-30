@@ -49,6 +49,8 @@ function scrubRuntimeSecretsFromProcessEnv(): void {
   delete process.env.BETTER_AUTH_SECRET;
   delete process.env[["TASKSMITH", "GITHUB", "WEBHOOK", "SECRET"].join("_")];
   delete process.env[["TASKSMITH", "JIRA", "WEBHOOK", "SECRET"].join("_")];
+  delete process.env.TASKSMITH_QUALITY_WEBHOOK_SECRET;
+  delete process.env.SLACK_BOT_TOKEN;
 }
 
 function startSourcePolling(sourcePoller: SourcePoller, intervalSeconds: number): void {

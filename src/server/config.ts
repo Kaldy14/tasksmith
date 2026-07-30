@@ -53,6 +53,7 @@ export function loadConfig(): AppConfig {
     sourceFlow: fileConfig?.sourceFlow ?? defaultSourceFlow(),
     githubWebhooks: parseGitHubWebhookConfig(),
     jiraWebhooks: parseJiraWebhookConfig(),
+    qualityAudit: parseQualityAuditConfig(dataDir),
     workflow: fileConfig?.workflow ?? defaultWorkflow(),
     verification: parseVerificationConfig(fileConfig?.defaultVerify),
     queue,
@@ -73,6 +74,75 @@ function parseJiraWebhookConfig(): AppConfig["jiraWebhooks"] {
   const signingKey = process.env[["TASKSMITH", "JIRA", "WEBHOOK", "SECRET"].join("_")]?.trim();
   if (!signingKey || Buffer.byteLength(signingKey, "utf8") < 16) throw new Error("Jira webhook signing key must be at least 16 bytes when enabled");
   return { enabled: true, signingKey };
+}
+
+function parseQualityAuditConfig(dataDir: string): AppConfig["qualityAudit"] {
+  const enabled = parseBooleanEnv(process.env.TASKSMITH_QUALITY_AUDIT_ENABLED);
+  if (!enabled) return { enabled: false };
+  const signingKey = process.env.TASKSMITH_QUALITY_WEBHOOK_SECRET?.trim();
+  if (!signingKey || Buffer.byteLength(signingKey, "utf8") < 16) {
+    throw new Error(
+      "Quality audit webhook signing key must be at least 16 bytes when enabled",
+    );
+  }
+  const repository = process.env.TASKSMITH_QUALITY_GITHUB_REPOSITORY?.trim();
+  if (!repository || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) {
+    throw new Error(
+      "TASKSMITH_QUALITY_GITHUB_REPOSITORY must be owner/repository",
+    );
+  }
+  const ghConfigDir = process.env.TASKSMITH_QUALITY_GH_CONFIG_DIR?.trim();
+  if (!ghConfigDir) {
+    throw new Error(
+      "TASKSMITH_QUALITY_GH_CONFIG_DIR is required when quality audits are enabled",
+    );
+  }
+  const reportsPublicUrl =
+    process.env.TASKSMITH_QUALITY_REPORTS_PUBLIC_URL?.trim();
+  if (!reportsPublicUrl) {
+    throw new Error(
+      "TASKSMITH_QUALITY_REPORTS_PUBLIC_URL is required when quality audits are enabled",
+    );
+  }
+  const slackBotToken = process.env.SLACK_BOT_TOKEN?.trim();
+  if (!slackBotToken) {
+    throw new Error(
+      "SLACK_BOT_TOKEN is required when quality audits are enabled",
+    );
+  }
+  const slackChannelId =
+    process.env.SLACK_QUALITY_CHANNEL_ID?.trim() ||
+    process.env.SLACK_RELEASE_CHANNEL_ID?.trim();
+  if (!slackChannelId) {
+    throw new Error(
+      "SLACK_QUALITY_CHANNEL_ID or SLACK_RELEASE_CHANNEL_ID is required when quality audits are enabled",
+    );
+  }
+  return {
+    enabled: true,
+    signingKey,
+    repository,
+    allowedRef:
+      process.env.TASKSMITH_QUALITY_ALLOWED_REF?.trim() || "refs/heads/main",
+    ghCommand: process.env.TASKSMITH_QUALITY_GH_COMMAND?.trim() || "gh",
+    ghConfigDir: path.resolve(ghConfigDir),
+    reportsDir: path.resolve(
+      process.env.TASKSMITH_QUALITY_REPORTS_DIR ||
+        path.join(dataDir, "quality-reports"),
+    ),
+    reportsPublicUrl: parseHttpBaseUrl(
+      reportsPublicUrl,
+      "TASKSMITH_QUALITY_REPORTS_PUBLIC_URL",
+    ),
+    slackBotToken,
+    slackChannelId,
+    slackApiUrl:
+      process.env.TASKSMITH_SLACK_API_URL?.trim() ||
+      "https://slack.com/api/chat.postMessage",
+    notifyOnClean: parseBooleanEnv(
+      process.env.TASKSMITH_QUALITY_NOTIFY_ON_CLEAN,
+    ),
+  };
 }
 
 function parseQueueLeaseConfig(fileQueue?: Pick<QueueLeaseConfig, "maxActiveRuns" | "maxActiveRunsPerRepo">): AppConfig["queue"] {
@@ -167,6 +237,7 @@ function applyParsedConfig(config: AppConfig, parsed: ParsedConfigFile): void {
   config.sourceFlow = parsed.sourceFlow ?? defaultSourceFlow();
   config.githubWebhooks = parseGitHubWebhookConfig();
   config.jiraWebhooks = parseJiraWebhookConfig();
+  config.qualityAudit = parseQualityAuditConfig(config.dataDir);
   config.workflow = parsed.workflow ?? defaultWorkflow();
   config.verification.defaultCommands = parseDefaultVerificationCommands(parsed.defaultVerify);
   config.queue = parseQueueLeaseConfig(parsed.queue);
@@ -538,6 +609,14 @@ function parsePublicBaseUrl(value: string | undefined, host: string, port: strin
   if (value?.trim()) return value.trim().replace(/\/$/, "");
   const resolvedHost = host === "0.0.0.0" ? "127.0.0.1" : host;
   return `http://${resolvedHost}:${port}`;
+}
+
+function parseHttpBaseUrl(value: string, label: string): string {
+  const parsed = new URL(value);
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`${label} must use http:// or https://`);
+  }
+  return parsed.toString().replace(/\/$/, "");
 }
 
 function parsePort(value: string): number {
