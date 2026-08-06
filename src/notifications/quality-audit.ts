@@ -33,11 +33,14 @@ interface QualityAuditSummary {
     status: "passed" | "failed" | "error";
     total: number;
     failed: number;
+    flaky: number;
     failures: TestFailure[];
+    flakyTests: TestFailure[];
   };
   visual: {
     status: "unchanged" | "changed" | "error";
     total: number;
+    failed: number;
     changed: number;
     errors: number;
     changes: TestFailure[];
@@ -258,15 +261,15 @@ async function notifySlack(
   payload: QualityAuditPayload,
   reportUrl: string,
 ): Promise<QualityAuditResult["slack"]> {
-  const attention =
-    payload.summary.functional.status !== "passed" ||
-    payload.summary.visual.status !== "unchanged";
+  const functionalFailed = payload.summary.functional.status !== "passed";
+  const visualFailed = payload.summary.visual.status !== "unchanged";
+  const attention = functionalFailed || visualFailed;
   if (!attention && !config.notifyOnClean) return { posted: false };
 
   const functional = payload.summary.functional;
   const visual = payload.summary.visual;
   const emoji =
-    functional.status !== "passed"
+    functionalFailed
       ? ":red_circle:"
       : visual.status === "changed"
         ? ":large_yellow_circle:"
@@ -274,12 +277,12 @@ async function notifySlack(
           ? ":black_circle:"
           : ":white_check_mark:";
   const title =
-    functional.status !== "passed"
-      ? "E2E testy vyžadují kontrolu"
-      : visual.status === "changed"
-        ? "Vizuální změny vyžadují kontrolu"
-        : visual.status === "error"
-          ? "Vizuální audit nedoběhl čistě"
+    functionalFailed && visualFailed
+      ? "E2E i vizuální E2E selhaly"
+      : functionalFailed
+        ? "E2E testy selhaly"
+        : visualFailed
+          ? "Vizuální E2E selhalo"
           : "Audit je čistý";
   const details = [
     ...functional.failures,
@@ -311,11 +314,11 @@ async function notifySlack(
         fields: [
           {
             type: "mrkdwn",
-            text: `*Funkční E2E*\n${functional.status} · ${functional.failed}/${functional.total} selhalo`,
+            text: `*Funkční E2E*\n${functional.status} · ${functional.failed}/${functional.total} selhalo · ${functional.flaky} flaky`,
           },
           {
             type: "mrkdwn",
-            text: `*Vizuální kontrola*\n${visual.status} · ${visual.changed} změn`,
+            text: `*Vizuální E2E*\n${visual.status} · ${visual.failed} selhalo = ${visual.changed} změn + ${visual.errors} runner chyb`,
           },
         ],
       },
@@ -389,10 +392,21 @@ function parseSummary(value: unknown): QualityAuditSummary {
         functional.failed,
         "summary.functional.failed",
       ),
+      flaky:
+        functional.flaky === undefined
+          ? 0
+          : nonNegativeInteger(functional.flaky, "summary.functional.flaky"),
       failures: parseFailures(
         functional.failures,
         "summary.functional.failures",
       ),
+      flakyTests:
+        functional.flakyTests === undefined
+          ? []
+          : parseFailures(
+              functional.flakyTests,
+              "summary.functional.flakyTests",
+            ),
     },
     visual: {
       status: enumValue(
@@ -401,6 +415,11 @@ function parseSummary(value: unknown): QualityAuditSummary {
         "summary.visual.status",
       ),
       total: nonNegativeInteger(visual.total, "summary.visual.total"),
+      failed:
+        visual.failed === undefined
+          ? nonNegativeInteger(visual.changed, "summary.visual.changed") +
+            nonNegativeInteger(visual.errors, "summary.visual.errors")
+          : nonNegativeInteger(visual.failed, "summary.visual.failed"),
       changed: nonNegativeInteger(visual.changed, "summary.visual.changed"),
       errors: nonNegativeInteger(visual.errors, "summary.visual.errors"),
       changes: parseFailures(visual.changes, "summary.visual.changes"),

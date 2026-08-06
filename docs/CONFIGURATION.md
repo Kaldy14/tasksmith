@@ -433,3 +433,26 @@ For each Run:
 4. Otherwise the built-in workspace smoke check.
 
 Verifier commands run outside Pi with `cwd` set to the per-run workspace and `HOME` set to the per-run home directory.
+
+## Quality audit receiver
+
+Enable the signed quality-audit receiver with:
+
+```dotenv
+TASKSMITH_QUALITY_AUDIT_ENABLED=1
+TASKSMITH_QUALITY_WEBHOOK_SECRET=<random-hmac-secret>
+TASKSMITH_QUALITY_GITHUB_REPOSITORY=VosoBrands/hive-e2e
+TASKSMITH_QUALITY_GH_CONFIG_DIR=/home/tasksmith/.config/gh-vosime
+TASKSMITH_QUALITY_ALLOWED_REF=refs/heads/main
+TASKSMITH_QUALITY_REPORTS_DIR=/opt/tasksmith/data/quality-reports
+TASKSMITH_QUALITY_REPORTS_PUBLIC_URL=https://tasksmith.vosi.me/quality-reports
+TASKSMITH_QUALITY_NOTIFY_ON_CLEAN=0
+SLACK_QUALITY_CHANNEL_ID=<channel-id>
+```
+
+`SLACK_BOT_TOKEN` is shared with the release notifier. Set
+`SLACK_QUALITY_CHANNEL_ID` to the dedicated operational-notification channel;
+only when it is absent does the quality receiver fall back to
+`SLACK_RELEASE_CHANNEL_ID`. Clean runs are hosted but remain silent by default.
+An audit with functional errors, visual differences, or both posts one combined
+Slack message with links to the report and GitHub workflow.
