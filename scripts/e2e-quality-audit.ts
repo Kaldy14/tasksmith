@@ -34,11 +34,14 @@ try {
       status: "failed",
       total: 10,
       failed: 1,
+      flaky: 0,
       failures: [{ title: "branch form saves" }],
+      flakyTests: [],
     },
     visual: {
       status: "changed",
       total: 8,
+      failed: 1,
       changed: 1,
       errors: 0,
       changes: [{ title: "branch create form" }],
@@ -262,6 +265,77 @@ cp -R ${shellQuote(`${fixtureDir}/.`)} "$destination/"
   );
   assert(isRecord(slackPayload), "Slack payload should be an object");
   assertEqual(slackPayload.channel, "CQUALITY", "Slack channel");
+  assertEqual(
+    slackPayload.text,
+    "Hive Admin quality audit: E2E i vizuální E2E selhaly",
+    "combined functional and visual failure title",
+  );
+
+  const notificationCases = [
+    {
+      runId: 124,
+      summary: {
+        ...summary,
+        visual: {
+          ...summary.visual,
+          status: "unchanged",
+          failed: 0,
+          changed: 0,
+          changes: [],
+        },
+      },
+      title: "Hive Admin quality audit: E2E testy selhaly",
+    },
+    {
+      runId: 125,
+      summary: {
+        ...summary,
+        functional: {
+          ...summary.functional,
+          status: "passed",
+          failed: 0,
+          failures: [],
+        },
+      },
+      title: "Hive Admin quality audit: Vizuální E2E selhalo",
+    },
+  ] as const;
+
+  for (const notificationCase of notificationCases) {
+    await writeFile(
+      path.join(fixtureDir, "summary.json"),
+      JSON.stringify(notificationCase.summary),
+      "utf8",
+    );
+    const casePayload = JSON.stringify({
+      schemaVersion: 1,
+      repository: "VosoBrands/hive-e2e",
+      runId: notificationCase.runId,
+      runAttempt: 1,
+      artifactId: String(notificationCase.runId + 1_000),
+      artifactName: `quality-audit-${notificationCase.runId}-1`,
+      eventName: "schedule",
+      ref: "refs/heads/main",
+      sha: "a".repeat(40),
+      workflowUrl: `https://github.com/VosoBrands/hive-e2e/actions/runs/${notificationCase.runId}`,
+      summary: notificationCase.summary,
+    });
+    const caseSignature = `sha256=${createHmac("sha256", signingKey).update(`${timestamp}.${casePayload}`).digest("hex")}`;
+    await handleQualityAuditNotification(
+      config,
+      {
+        "x-tasksmith-timestamp": timestamp,
+        "x-tasksmith-signature-256": caseSignature,
+      },
+      Buffer.from(casePayload),
+    );
+    assert(isRecord(slackPayload), "Slack payload should be an object");
+    assertEqual(
+      slackPayload.text,
+      notificationCase.title,
+      `notification title for run ${notificationCase.runId}`,
+    );
+  }
 
   let rejected = false;
   try {

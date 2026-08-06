@@ -382,6 +382,8 @@ repos:
 TaskSmith can accept a signed quality-audit webhook, download the matching
 GitHub Actions artifact, host it from `qualityAudit.reportsDir`, and notify a
 Slack channel. Reports are informational and do not change TaskSmith Run state.
+Each audit posts at most one Slack notification, with a headline that distinguishes
+functional E2E failures, visual E2E failures, and failures in both categories.
 
 Visual baselines use an explicit approval model:
 
