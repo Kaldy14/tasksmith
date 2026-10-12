@@ -24,6 +24,7 @@ const SHA_PATTERN = /^[0-9a-f]{40}$/;
 interface TestFailure {
   title: string;
   file?: string;
+  project?: string;
 }
 
 interface QualityAuditSummary {
@@ -285,12 +286,12 @@ async function notifySlack(
           ? "Vizuální E2E selhalo"
           : "Audit je čistý";
   const details = [
-    ...functional.failures,
-    ...visual.changes,
-    ...visual.failures,
+    ...functional.failures.map((failure) => ({ ...failure, kind: "funkční chyba" })),
+    ...visual.changes.map((failure) => ({ ...failure, kind: "změna vzhledu" })),
+    ...visual.failures.map((failure) => ({ ...failure, kind: "runner chyba" })),
   ]
     .slice(0, 8)
-    .map((failure) => `• ${truncateSlackText(failure.title, 140)}`)
+    .map((failure) => `• ${truncateSlackText(failure.title, 140)}${failure.project ? ` (${truncateSlackText(failure.project, 60)})` : ""} · ${failure.kind}`)
     .join("\n");
   const slackPayload = {
     channel: config.slackChannelId,
@@ -318,7 +319,7 @@ async function notifySlack(
           },
           {
             type: "mrkdwn",
-            text: `*Vizuální E2E*\n${visual.status} · ${visual.failed} selhalo = ${visual.changed} změn + ${visual.errors} runner chyb`,
+            text: `*Vizuální E2E*\n${visual.status} · ${visual.failed} selhalo · ${visual.changed} se změnou vzhledu · ${visual.errors} s runner chybou\nKategorie se mohou překrývat.`,
           },
         ],
       },
@@ -438,9 +439,14 @@ function parseFailures(value: unknown, label: string): TestFailure[] {
       record.file === undefined
         ? undefined
         : requiredString(record.file, `${label}[${index}].file`, 500);
+    const project =
+      record.project === undefined
+        ? undefined
+        : requiredString(record.project, `${label}[${index}].project`, 500);
     return {
       title: requiredString(record.title, `${label}[${index}].title`, 500),
       ...(file ? { file } : {}),
+      ...(project ? { project } : {}),
     };
   });
 }

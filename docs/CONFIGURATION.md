@@ -456,3 +456,6 @@ only when it is absent does the quality receiver fall back to
 `SLACK_RELEASE_CHANNEL_ID`. Clean runs are hosted but remain silent by default.
 An audit with functional errors, visual differences, or both posts one combined
 Slack message with links to the report and GitHub workflow.
+Visual image changes and runner errors can overlap in one check. The Slack
+message preserves the distinct failed-check count and labels each finding with
+its project and category instead of adding the two category counts together.

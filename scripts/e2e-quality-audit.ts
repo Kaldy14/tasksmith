@@ -273,6 +273,23 @@ cp -R ${shellQuote(`${fixtureDir}/.`)} "$destination/"
 
   const notificationCases = [
     {
+      runId: 126,
+      summary: {
+        ...summary,
+        functional: { ...summary.functional, status: "passed", failed: 0, failures: [] },
+        visual: {
+          ...summary.visual,
+          status: "error",
+          failed: 1,
+          changed: 1,
+          errors: 1,
+          changes: [{ title: "branch create form", project: "visual-chromium" }],
+          failures: [{ title: "branch create form", project: "visual-chromium", message: "Timeout waiting for response" }],
+        },
+      },
+      title: "Hive Admin quality audit: Vizuální E2E selhalo",
+    },
+    {
       runId: 124,
       summary: {
         ...summary,
@@ -335,6 +352,12 @@ cp -R ${shellQuote(`${fixtureDir}/.`)} "$destination/"
       notificationCase.title,
       `notification title for run ${notificationCase.runId}`,
     );
+    if (notificationCase.runId === 126) {
+      const rendered = JSON.stringify(slackPayload);
+      assert(rendered.includes("1 selhalo · 1 se změnou vzhledu · 1 s runner chybou"), "mixed failure keeps one failed check and both categories");
+      assert(rendered.includes("Kategorie se mohou překrývat."), "mixed failure explains overlapping counts");
+      assert(rendered.includes("branch create form (visual-chromium) · runner chyba"), "runner finding identifies its project and category");
+    }
   }
 
   let rejected = false;
