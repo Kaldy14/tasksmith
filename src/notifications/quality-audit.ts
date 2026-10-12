@@ -41,7 +41,7 @@ interface QualityAuditSummary {
   visual: {
     status: "unchanged" | "changed" | "error";
     total: number;
-    failed: number;
+    failed: number | undefined;
     changed: number;
     errors: number;
     changes: TestFailure[];
@@ -319,7 +319,7 @@ async function notifySlack(
           },
           {
             type: "mrkdwn",
-            text: `*Vizuální E2E*\n${visual.status} · ${visual.failed} selhalo · ${visual.changed} se změnou vzhledu · ${visual.errors} s runner chybou\nKategorie se mohou překrývat.`,
+            text: `*Vizuální E2E*\n${visual.status}${visual.failed === undefined ? "" : ` · ${visual.failed} selhalo`} · ${visual.changed} se změnou vzhledu · ${visual.errors} s runner chybou\nKategorie se mohou překrývat.`,
           },
         ],
       },
@@ -418,8 +418,7 @@ function parseSummary(value: unknown): QualityAuditSummary {
       total: nonNegativeInteger(visual.total, "summary.visual.total"),
       failed:
         visual.failed === undefined
-          ? nonNegativeInteger(visual.changed, "summary.visual.changed") +
-            nonNegativeInteger(visual.errors, "summary.visual.errors")
+          ? undefined
           : nonNegativeInteger(visual.failed, "summary.visual.failed"),
       changed: nonNegativeInteger(visual.changed, "summary.visual.changed"),
       errors: nonNegativeInteger(visual.errors, "summary.visual.errors"),

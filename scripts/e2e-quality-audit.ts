@@ -290,6 +290,23 @@ cp -R ${shellQuote(`${fixtureDir}/.`)} "$destination/"
       title: "Hive Admin quality audit: Vizuální E2E selhalo",
     },
     {
+      runId: 127,
+      summary: {
+        ...summary,
+        functional: { ...summary.functional, status: "passed", failed: 0, failures: [] },
+        visual: {
+          ...summary.visual,
+          status: "error",
+          failed: undefined,
+          changed: 1,
+          errors: 1,
+          changes: [{ title: "branch create form", project: "visual-chromium" }],
+          failures: [{ title: "branch create form", project: "visual-chromium", message: "Timeout waiting for response" }],
+        },
+      },
+      title: "Hive Admin quality audit: Vizuální E2E selhalo",
+    },
+    {
       runId: 124,
       summary: {
         ...summary,
@@ -352,6 +369,10 @@ cp -R ${shellQuote(`${fixtureDir}/.`)} "$destination/"
       notificationCase.title,
       `notification title for run ${notificationCase.runId}`,
     );
+    if (notificationCase.runId === 127) {
+      const rendered = JSON.stringify(slackPayload);
+      assert(rendered.includes("error · 1 se změnou vzhledu · 1 s runner chybou"), "legacy mixed failure preserves both category counts without inventing a distinct total");
+    }
     if (notificationCase.runId === 126) {
       const rendered = JSON.stringify(slackPayload);
       assert(rendered.includes("1 selhalo · 1 se změnou vzhledu · 1 s runner chybou"), "mixed failure keeps one failed check and both categories");

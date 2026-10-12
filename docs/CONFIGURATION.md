@@ -459,3 +459,5 @@ Slack message with links to the report and GitHub workflow.
 Visual image changes and runner errors can overlap in one check. The Slack
 message preserves the distinct failed-check count and labels each finding with
 its project and category instead of adding the two category counts together.
+Older summaries without a distinct failed-check count show only the two category
+counts; the receiver does not infer a total from overlapping categories.
